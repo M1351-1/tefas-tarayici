@@ -1,0 +1,37 @@
+# SQLite veritabani — 100+ MB, GitHub dosya sinirini asiyor.
+# GitHub Actions onbelleginde tutuluyor, repoda degil.
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Uretilen veri dosyalari main dalinda DURMAZ.
+# Ayri bir "veri" dalina yaziliyorlar (bkz. .github/workflows/gunluk.yml):
+# her gun 2335 dosyayi main'e islemek git gecmisini yilda gigabaytlarca
+# sisirirdi. "veri" dali her calismada tek commit olarak yeniden yaziliyor.
+data/fonlar.json
+data/gecmis/
+data/*.log
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Flutter
+mobil/build/
+mobil/.dart_tool/
+mobil/.flutter-plugins
+mobil/.flutter-plugins-dependencies
+mobil/android/.gradle/
+mobil/android/local.properties
+mobil/android/key.properties
+*.jks
+*.keystore
+
+# Editor
+.vscode/
+.idea/
+*.iml
+Thumbs.db

@@ -1,0 +1,29 @@
+{
+  "_aciklama": "Bu dosyayi elle degistirebilirsin. Degistirdikten sonra gunluk.py'yi tekrar calistir; TEFAS'tan yeniden veri cekmeden puanlar yeniden hesaplanir.",
+
+  "agirliklar": {
+    "aylik_getiri": 0.35,
+    "uc_aylik_getiri": 0.25,
+    "haftalik_getiri": 0.20,
+    "volatilite": 0.20
+  },
+  "_agirliklar_notu": "Toplami 1.0 olmali. volatilite agirligi TERS uygulanir: dusuk oynaklik puan kazandirir.",
+
+  "asgari_gecmis_gun": 90,
+  "_asgari_gecmis_notu": "Bu kadar islem gunu verisi olmayan fon siralanmaz. 3 aylik getiri 63 gun ister; 90 gun makul bir alt sinir.",
+
+  "asgari_fon_buyuklugu": 10000000,
+  "_asgari_buyukluk_notu": "TL. Cok kucuk fonlar hem likit degildir hem de tek bir islemle fiyati oynar.",
+
+  "asgari_kategori_fon_sayisi": 10,
+  "_asgari_kategori_notu": "Bu sayidan az fonu olan kategoride z-skor anlamsizdir; o kategori listelenir ama puanlanmaz.",
+
+  "z_kirpma": 3.0,
+  "_z_kirpma_notu": "z-skorlar bu araliga kirpilir. Tek bir ucuk fonun butun siralamayi bozmasini engeller.",
+
+  "gecmis_gun": 400,
+  "_gecmis_notu": "Ilk dolumda kac takvim gunu geriye gidilecegi. 400 gun ~ 275 islem gunu; 252 gunluk yillik getiri icin yeterli.",
+
+  "grafik_gun": 365,
+  "_grafik_notu": "Mobil uygulamaya gonderilen fiyat serisinin uzunlugu (takvim gunu)."
+}

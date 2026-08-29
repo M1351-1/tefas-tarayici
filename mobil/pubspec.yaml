@@ -1,0 +1,46 @@
+name: tefas_mobil
+description: >-
+  TEFAS'taki yatırım fonlarını kategori içinde puanlayıp sıralayan Android
+  uygulaması. Bir hesaplama ve karşılaştırma aracıdır, yatırım tavsiyesi
+  değildir.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Hazır veri dosyasını indirmek için
+  http: ^1.2.2
+
+  # Önbellek dosyasının nereye yazılacağını bulmak için
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # Favoriler, tema tercihi, veri adresi
+  shared_preferences: ^2.3.2
+
+  # Claude API anahtarı için. Android'de EncryptedSharedPreferences kullanır;
+  # anahtar düz metin olarak diskte durmaz.
+  flutter_secure_storage: ^9.2.2
+
+  # NOT: Grafik paketi BİLEREK eklenmedi. Fiyat grafiğini CustomPainter ile
+  # kendimiz çiziyoruz; hazır paketler Türkçe sayı biçimini ve dokunmalı
+  # okumayı zorlaştırıyor, ayrıca APK'yı şişiriyor.
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+  # Çekirdek testleri `dart test` ile koşuyor, `flutter test` ile değil:
+  # bu makinede Windows Uygulama Denetimi ilkesi flutter_tester.exe'yi
+  # engelliyor. Çekirdek (modeller/puanlama/secici) Flutter'a bağımlı
+  # olmadığı için saf Dart VM'de sorunsuz koşuyor.
+  test: ^1.25.0
+
+flutter:
+  uses-material-design: true
