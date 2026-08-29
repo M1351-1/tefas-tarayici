@@ -51,7 +51,7 @@ jobs:
 
       - name: Testleri kosla
         run: |
-          python -m pip install --quiet pytest
+          python -m pip install --quiet pytest pyyaml
           python -m pytest toplayici/test -q
 
       - name: Veriyi topla
@@ -115,4 +115,10 @@ jobs:
 
       - name: Ozet
         if: always()
-        run: echo "Bitti. Veri adresi: raw.githubusercontent.com/${{ github.repository }}/veri/"
+        # Blok skalari sart: tirnaksiz bir YAML degerinin icinde "iki nokta +
+        # bosluk" gecerse YAML orada yeni bir eslemeye basladigini sanip
+        # dosyanin tamamini ayristiramiyor. O zaman is akisi calismiyor bile;
+        # GitHub "workflow_dispatch tetikleyicisi yok" gibi alakasiz bir hata
+        # veriyor ve gunlukte hicbir kayit olmuyor.
+        run: |
+          echo "Bitti. Veri adresi: raw.githubusercontent.com/${{ github.repository }}/veri/"
