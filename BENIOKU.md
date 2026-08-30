@@ -57,6 +57,12 @@ python toplayici/topla.py kategori
 Kategori eşlemesini yeniler. Haftada bir yeterli.
 
 ```bash
+python toplayici/topla.py dagilim
+```
+Portföy varlık dağılımını çeker. **Sadece 3 istek** — fon başına değil, fon
+tipi başına bir istek, tek gün için.
+
+```bash
 python toplayici/topla.py hesapla
 ```
 **Ağa hiç çıkmaz.** `ayarlar.json`'daki ağırlıkları değiştirdikten sonra
@@ -156,6 +162,19 @@ uçları **404 dönüyor**; internetteki eski kod örnekleri çalışmaz.
   gelir.
 - Tatil/hafta sonu için `"Index 0 out of bounds"` gibi mesajlar dönebilir;
   bu hata değil, "veri yok" demektir.
+- **`fonKodu` filtresi hiçbir uçta çalışmıyor.** Tek fon istediğinizi sanıp
+  dönen ilk satırı okursanız bambaşka bir fonun verisini gösterirsiniz. Bu
+  tuzağa bir kez düşüldü: bir Amerika hisse fonunun portföyü "repo ve
+  mevduat" göründü — aslında listenin başındaki para piyasası fonuydu.
+  Her zaman hepsini çekip `fonKodu` ile eşleştirin.
+
+### Varlık dağılımı etiketleri
+
+`dagilimSiraliGetirT` yanıtı `yyf`, `kmkks`, `ybosb` gibi okunamaz kodlar
+döndürür. `toplayici/dagilim.py` içindeki Türkçe karşılıklar **tahmin
+değildir**; TEFAS'ın kendi sayfasının HTML'ine gömülü kolon tanımlarından
+alınmıştır. Tanınmayan bir kod gelirse atılmaz, kodun kendisi etiket olarak
+gösterilir — TEFAS yeni bir varlık sınıfı eklerse sessizce kaybolmasın.
 
 ---
 
@@ -206,7 +225,7 @@ flutter build apk --release
 | **Akıllı Filtre** | Risk/vade/tercih sorularından kısa liste + gerekçe + uyarılar |
 | **Kategoriler** | Kategori listesi → o kategorinin sıralı fonları |
 | **Tüm Fonlar** | Yatay kaydırmalı, sütun başlığından sıralanan tablo |
-| **Fon Detay** | Fiyat grafiği (1A/3A/6A/1Y), tüm metrikler, puan kırılımı |
+| **Fon Detay** | Fiyat grafiği (1A/3A/6A/1Y), tüm metrikler, puan kırılımı, portföy dağılımı pastası |
 | **Favoriler** | Yıldızlanan fonlar (üst çubuktaki yıldız) |
 | **Ayarlar** | Tema, ağırlıklar, Claude anahtarı, veri adresi |
 

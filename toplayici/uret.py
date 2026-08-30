@@ -19,6 +19,8 @@ import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import dagilim as _dagilim
+
 SORUMLULUK_NOTU = (
     "Bu uygulama yatırım danışmanlığı değildir. Gösterilen sıralamalar geçmiş "
     "fiyat verilerinden hesaplanmış istatistiklerdir. Geçmiş getiri gelecek "
@@ -133,8 +135,16 @@ def ozet_yaz(yol, puanlanan, puanlanmayan, elenen, ayarlar, veri_tarihi):
     return yol.stat().st_size
 
 
-def gecmis_yaz(klasor, seriler, kodlar, gun_siniri=None):
-    """Fon basina fiyat serisi dosyalari yazar. (dosya_sayisi, toplam_bayt)"""
+def gecmis_yaz(klasor, seriler, kodlar, gun_siniri=None, dagilimlar=None):
+    """Fon basina fiyat serisi ve varlik dagilimi yazar.
+
+    Dagilim da buraya konuyor, fonlar.json'a degil: ikisi de sadece fon
+    detay ekraninda gosteriliyor ve o ekran zaten bu dosyayi indiriyor.
+    2335 fonun dagilimini ozet dosyaya koymak her acilista bosuna
+    indirilen ~400 KB demekti.
+
+    Doner: (dosya_sayisi, toplam_bayt)
+    """
     klasor = Path(klasor)
     if klasor.exists():
         # Listeden dusen fonun eski dosyasi kalmasin.
@@ -154,6 +164,13 @@ def gecmis_yaz(klasor, seriler, kodlar, gun_siniri=None):
             "tarihler": [t for t, _ in seri],
             "fiyatlar": [round(f, 6) for _, f in seri],
         }
+        kalemler = (dagilimlar or {}).get(kod)
+        if kalemler:
+            ozet = _dagilim.ozetle(
+                [(alan, _dagilim.ETIKETLER.get(alan, alan), yuzde)
+                 for alan, yuzde in kalemler])
+            icerik["dagilim"] = [
+                {"kod": a, "ad": e, "yuzde": round(y, 2)} for a, e, y in ozet]
         d_yol = klasor / (kod + ".json")
         with open(d_yol, "w", encoding="utf-8") as d:
             json.dump(icerik, d, ensure_ascii=False, separators=(",", ":"))

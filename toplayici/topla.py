@@ -5,6 +5,7 @@ Kullanim:
     python topla.py dolum     Ilk kurulum: 400 gunluk gecmis + kategoriler
     python topla.py gunluk    Gunluk calisma: sadece eksik gunleri ceker
     python topla.py kategori  Sadece kategori eslemesini yeniler (haftalik)
+    python topla.py dagilim   Sadece portfoy varlik dagilimini ceker (3 istek)
     python topla.py hesapla   Aga hic cikmadan metrik/puan/JSON yeniden uretir
 
 'hesapla' ayri duruyor cunku ayarlar.json'daki agirliklari degistirdiginde
@@ -21,6 +22,7 @@ from pathlib import Path
 KOK = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(KOK / "toplayici"))
 
+import dagilim as _dag
 import istemci as _ist
 import kategoriler as _kat
 import metrikler as _met
@@ -127,6 +129,29 @@ def kategorileri_esle(ist, depo, gun):
 
 # ------------------------------------------------------------------- cekim
 
+def dagilimlari_cek(ist, depo, gun):
+    """Portfoy varlik dagilimini ceker (fon tipi basina 1 istek).
+
+    Ucuz: sadece en son gun icin, tarih araligi yok. Uc fon tipi = uc istek.
+    """
+    yaz("Portfoy dagilimlari cekiliyor...")
+    hepsi = {}
+    for tip in _ist.FON_TIPLERI:
+        try:
+            ham = ist.dagilimlar(tip, gun)
+        except _ist.TefasHatasi as e:
+            yaz("  ! %s atlandi: %s" % (tip, e.mesaj))
+            continue
+        for kod, satir in ham.items():
+            kalemler = _dag.ayikla(satir)
+            if kalemler:
+                hepsi[kod] = kalemler
+        yaz("  %-4s %d fon" % (tip, len(ham)))
+    n = depo.dagilim_yaz(hepsi, str(gun))
+    yaz("  %d fon icin %d kalem kaydedildi" % (len(hepsi), n))
+    return hepsi
+
+
 def fiyatlari_cek(ist, depo, baslangic, bitis):
     toplam = 0
     for tip in _ist.FON_TIPLERI:
@@ -183,8 +208,12 @@ def hesapla_ve_yaz(depo, ayarlar):
     yaz("  fonlar.json yazildi: %.2f MB" % (boyut / 1024 / 1024))
 
     kodlar = [f["fon_kodu"] for f in puanlanan + puanlanmayan]
+    dagilimlar = depo.dagilim_haritasi()
+    if dagilimlar:
+        yaz("  %d fonun varlik dagilimi var" % len(dagilimlar))
     adet, gboyut = _uret.gecmis_yaz(GECMIS_KLASORU, seriler, kodlar,
-                                    gun_siniri=ayarlar["grafik_gun"])
+                                    gun_siniri=ayarlar["grafik_gun"],
+                                    dagilimlar=dagilimlar)
     yaz("  gecmis/: %d dosya, %.2f MB (ortalama %.1f KB)"
         % (adet, gboyut / 1024 / 1024, gboyut / adet / 1024 if adet else 0))
     return puanlanan, puanlanmayan, elenen
@@ -219,6 +248,9 @@ def dolum():
         fiyatlari_cek(ist, depo, baslangic, bitis)
 
         yaz()
+        dagilimlari_cek(ist, depo, ref - timedelta(days=1))
+
+        yaz()
         yaz("Veritabani: %d fon, %d kayit"
             % (depo.fon_sayisi(), depo.kayit_sayisi()))
         yaz()
@@ -246,6 +278,17 @@ def gunluk():
             yaz("Veri zaten guncel.")
         else:
             fiyatlari_cek(ist, depo, baslangic, bitis)
+
+        # Dagilim her gun tazelenir: fon portfoyu gunluk degisir ve
+        # sadece son gun tutuldugu icin bayat kalmasi anlamsiz olur.
+        yaz()
+        son_isgunu = date.today()
+        for _ in range(7):
+            if son_isgunu.weekday() < 5:
+                break
+            son_isgunu -= timedelta(days=1)
+        dagilimlari_cek(ist, depo, son_isgunu - timedelta(days=1))
+
         yaz()
         hesapla_ve_yaz(depo, ayarlar)
     yaz("BITTI. %d istek." % ist.istek_sayisi)
@@ -272,6 +315,22 @@ def kategori_yenile():
     yaz("BITTI. %d istek." % ist.istek_sayisi)
 
 
+def dagilim_yenile():
+    """Sadece portfoy dagilimini ceker (3 istek), fiyat cekmez."""
+    ayarlar = ayarlari_oku()
+    ist = _ist.Istemci()
+    with _vt.Depo(VT_YOLU) as depo:
+        gun = date.today()
+        for _ in range(7):
+            if gun.weekday() < 5:
+                break
+            gun -= timedelta(days=1)
+        dagilimlari_cek(ist, depo, gun - timedelta(days=1))
+        yaz()
+        hesapla_ve_yaz(depo, ayarlar)
+    yaz("BITTI. %d istek." % ist.istek_sayisi)
+
+
 def hesapla_sadece():
     ayarlar = ayarlari_oku()
     with _vt.Depo(VT_YOLU) as depo:
@@ -290,6 +349,8 @@ if __name__ == "__main__":
         gunluk()
     elif komut == "kategori":
         kategori_yenile()
+    elif komut == "dagilim":
+        dagilim_yenile()
     elif komut == "hesapla":
         hesapla_sadece()
     else:

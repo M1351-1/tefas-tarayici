@@ -282,16 +282,45 @@ class Veri {
       );
 }
 
-/// Tek bir fonun fiyat geçmişi (gecmis/KOD.json).
+/// Portföyün bir varlık kalemi.
+///
+/// Etiketler TEFAS'ın kendi kolon adlarıdır, bizim uydurmamız değil.
+class DagilimKalemi {
+  final String kod;
+  final String ad;
+  final double yuzde;
+
+  const DagilimKalemi({
+    required this.kod,
+    required this.ad,
+    required this.yuzde,
+  });
+
+  factory DagilimKalemi.jsondan(Map<String, dynamic> j) => DagilimKalemi(
+        kod: (j['kod'] as String?) ?? '',
+        ad: (j['ad'] as String?) ?? '',
+        yuzde: (j['yuzde'] as num?)?.toDouble() ?? 0,
+      );
+
+  /// Toplayıcının birleştirdiği "Diğer (n kalem)" satırı mı?
+  bool get toplananDiger => kod == '_diger';
+}
+
+/// Tek bir fonun fiyat geçmişi ve portföy dağılımı (gecmis/KOD.json).
 class Gecmis {
   final String kod;
   final List<String> tarihler;
   final List<double> fiyatlar;
 
+  /// Portföy varlık dağılımı — sadece EN SON güne aittir.
+  /// Boş olabilir: her fonun dağılım verisi gelmiyor.
+  final List<DagilimKalemi> dagilim;
+
   const Gecmis({
     required this.kod,
     required this.tarihler,
     required this.fiyatlar,
+    this.dagilim = const [],
   });
 
   factory Gecmis.jsondan(Map<String, dynamic> j) => Gecmis(
@@ -300,15 +329,23 @@ class Gecmis {
         fiyatlar: ((j['fiyatlar'] as List?) ?? [])
             .map((e) => (e as num).toDouble())
             .toList(),
+        dagilim: ((j['dagilim'] as List?) ?? [])
+            .whereType<Map>()
+            .map((e) => DagilimKalemi.jsondan(
+                e.map((k, v) => MapEntry(k.toString(), v))))
+            .toList(),
       );
 
   /// Son [gun] gözlemi döndürür (1A ≈ 21, 3A ≈ 63, 1Y ≈ 252 işlem günü).
+  ///
+  /// Dağılım kırpılmaz: o zaten tek bir güne ait.
   Gecmis son(int gun) {
     if (fiyatlar.length <= gun) return this;
     return Gecmis(
       kod: kod,
       tarihler: tarihler.sublist(tarihler.length - gun),
       fiyatlar: fiyatlar.sublist(fiyatlar.length - gun),
+      dagilim: dagilim,
     );
   }
 }

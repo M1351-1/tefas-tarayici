@@ -386,9 +386,72 @@ void main() {
       expect(g.son(252).fiyatlar.length, 1);
     });
   });
+
+  dagilimTestleri();
 }
 
 List<Fon> evrenBasit() => [
       Fon.jsondan(fonJson(kod: 'A')),
       Fon.jsondan(fonJson(kod: 'B')),
     ];
+
+// ------------------------------------------------------- portföy dağılımı
+
+void dagilimTestleri() {
+  group('Portföy dağılımı', () {
+    Gecmis ornek() => Gecmis.jsondan({
+          'kod': 'AFA',
+          'tarihler': ['2026-08-27', '2026-08-28'],
+          'fiyatlar': [1.2, 1.29],
+          'dagilim': [
+            {'kod': 'yhs', 'ad': 'Yabancı Hisse Senedi', 'yuzde': 96.99},
+            {'kod': 'yyf', 'ad': 'Yatırım Fonları Katılma Payları', 'yuzde': 1.74},
+            {'kod': 'tr', 'ad': 'Ters-Repo', 'yuzde': 1.26},
+          ],
+        });
+
+    test('dağılım çözümlenir', () {
+      final g = ornek();
+      expect(g.dagilim.length, 3);
+      expect(g.dagilim.first.ad, 'Yabancı Hisse Senedi');
+      expect(g.dagilim.first.yuzde, 96.99);
+    });
+
+    test('dağılım yoksa boş liste', () {
+      final g = Gecmis.jsondan({'kod': 'X', 'tarihler': [], 'fiyatlar': []});
+      expect(g.dagilim, isEmpty);
+    });
+
+    test('son() dağılımı kırpmaz', () {
+      // Dağılım tek bir güne aittir; dönem seçimi onu etkilememeli.
+      final g = ornek().son(1);
+      expect(g.fiyatlar.length, 1);
+      expect(g.dagilim.length, 3);
+    });
+
+    test('birleştirilmiş "Diğer" satırı tanınır', () {
+      final g = Gecmis.jsondan({
+        'kod': 'X',
+        'tarihler': <String>[],
+        'fiyatlar': <double>[],
+        'dagilim': [
+          {'kod': 'hs', 'ad': 'Hisse Senedi', 'yuzde': 60.0},
+          {'kod': '_diger', 'ad': 'Diğer (9 kalem)', 'yuzde': 40.0},
+        ],
+      });
+      expect(g.dagilim.first.toplananDiger, isFalse);
+      expect(g.dagilim.last.toplananDiger, isTrue);
+    });
+
+    test('bozuk kalem çökertmez', () {
+      final g = Gecmis.jsondan({
+        'kod': 'X',
+        'tarihler': <String>[],
+        'fiyatlar': <double>[],
+        'dagilim': [<String, dynamic>{}],
+      });
+      expect(g.dagilim.length, 1);
+      expect(g.dagilim.first.yuzde, 0);
+    });
+  });
+}

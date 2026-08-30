@@ -200,6 +200,34 @@ class Istemci:
         satirlar = d.get("resultList") or []
         return sorted({s["fonKodu"] for s in satirlar if s.get("fonKodu")})
 
+    # ---------------- varlik dagilimi ----------------
+
+    def dagilimlar(self, fon_tipi, gun):
+        """Verilen gun icin TUM fonlarin portfoy dagilimini dondurur.
+
+        {fon_kodu: {alan_kodu: yuzde}} seklinde.
+
+        DIKKAT: bu ucta da `fonKodu` filtresi YOK SAYILIYOR. Tek fon
+        istedigimizi sanip donen ilk satiri okursak bambaska bir fonun
+        dagilimini gostermis oluruz - bir Amerika hisse fonuna "portfoyu
+        repo ve mevduat" dedirtir. O yuzden hepsini cekip kodla eslestir.
+        """
+        g = self._govde(fonTipi=fon_tipi,
+                        basTarih=gun.strftime("%Y%m%d"),
+                        bitTarih=gun.strftime("%Y%m%d"))
+        d = self._gonder(DAGILIM_UCU, g)
+        hata = d.get("errorMessage")
+        if hata and not any(m in hata.lower()
+                            for m in ("out of bounds", "veri bulunamadi")):
+            raise TefasHatasi("TEFAS hata dondurdu.", "", hata)
+
+        cikti = {}
+        for s in (d.get("resultList") or []):
+            kod = s.get("fonKodu")
+            if kod:
+                cikti[kod] = s
+        return cikti
+
     # ---------------- fiyatlar ----------------
 
     def fiyatlar(self, fon_tipi, baslangic, bitis):

@@ -209,6 +209,22 @@ class _DetaySayfasiDurumu extends State<DetaySayfasi> {
           ),
           const SizedBox(height: 12),
 
+          // ------------------------------------------- varlık dağılımı
+          if (_gecmis != null && _gecmis!.dagilim.isNotEmpty) ...[
+            _Bolum(
+              baslik: 'Portföy dağılımı',
+              cocuk: Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 8),
+                child: DagilimPastasi(
+                  kalemler: [
+                    for (final k in _gecmis!.dagilim) (k.ad, k.yuzde),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           // ---------------------------------------------- puan kırılımı
           if (kayit.puan != null && f.kirilim.isNotEmpty)
             _PuanKirilimi(kayit: kayit, agirliklar: durum.ayarlar.agirliklar)

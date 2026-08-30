@@ -254,3 +254,130 @@ class _FiyatCizer extends CustomPainter {
       eski.fiyatlar != fiyatlar ||
       eski.renk != renk;
 }
+
+/// Portföy dağılımı pastası.
+///
+/// Dilim renkleri sabit bir paletten sırayla verilir; TEFAS'ın varlık
+/// sınıflarına anlam yükleyen bir renk şeması UYDURMUYORUZ (kırmızı = riskli
+/// gibi). Böyle bir şema, olmayan bir yargıyı varmış gibi gösterirdi.
+const List<Color> dagilimRenkleri = [
+  Color(0xFF00897B), // teal
+  Color(0xFF3949AB), // indigo
+  Color(0xFFF9A825), // amber
+  Color(0xFF6D4C41), // brown
+  Color(0xFF00ACC1), // cyan
+  Color(0xFF7CB342), // light green
+  Color(0xFF8E24AA), // purple
+  Color(0xFFEF6C00), // orange
+  Color(0xFF546E7A), // blue grey
+];
+
+class DagilimPastasi extends StatelessWidget {
+  /// (etiket, yüzde) çiftleri, büyükten küçüğe.
+  final List<(String, double)> kalemler;
+
+  const DagilimPastasi({super.key, required this.kalemler});
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    if (kalemler.isEmpty) {
+      return Text('Bu fon için dağılım verisi yok.',
+          style: tema.textTheme.bodySmall);
+    }
+
+    final toplam = kalemler.fold<double>(0, (a, b) => a + b.$2);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: SizedBox(
+            width: 172,
+            height: 172,
+            child: CustomPaint(
+              painter: _PastaCizer(
+                kalemler: kalemler,
+                zemin: tema.colorScheme.surface,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        for (var i = 0; i < kalemler.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 11,
+                  height: 11,
+                  margin: const EdgeInsets.only(top: 3),
+                  decoration: BoxDecoration(
+                    color: dagilimRenkleri[i % dagilimRenkleri.length],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(kalemler[i].$1,
+                      style: tema.textTheme.bodySmall),
+                ),
+                const SizedBox(width: 8),
+                Text('%${trSayi(kalemler[i].$2)}',
+                    style: tema.textTheme.bodySmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        // Toplam 100 etmiyorsa sustuğumuz bir şey var demektir; söyleyelim.
+        if ((toplam - 100).abs() > 1.5)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Kalemler toplamı %${trSayi(toplam)}. TEFAS bazı küçük '
+              'kalemleri ayrı raporlamıyor.',
+              style: tema.textTheme.bodySmall?.copyWith(
+                  color: tema.colorScheme.onSurfaceVariant, fontSize: 11),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PastaCizer extends CustomPainter {
+  final List<(String, double)> kalemler;
+  final Color zemin;
+
+  _PastaCizer({required this.kalemler, required this.zemin});
+
+  @override
+  void paint(Canvas tuval, Size boyut) {
+    final merkez = Offset(boyut.width / 2, boyut.height / 2);
+    final yaricap = math.min(boyut.width, boyut.height) / 2;
+    final toplam = kalemler.fold<double>(0, (a, b) => a + b.$2);
+    if (toplam <= 0) return;
+
+    var baslangic = -math.pi / 2; // saat 12'den başla
+    for (var i = 0; i < kalemler.length; i++) {
+      final aci = (kalemler[i].$2 / toplam) * 2 * math.pi;
+      tuval.drawArc(
+        Rect.fromCircle(center: merkez, radius: yaricap),
+        baslangic,
+        aci,
+        true,
+        Paint()..color = dagilimRenkleri[i % dagilimRenkleri.length],
+      );
+      baslangic += aci;
+    }
+
+    // Ortası boş halka: dilimler birbirinden daha kolay ayırt ediliyor.
+    tuval.drawCircle(merkez, yaricap * 0.55, Paint()..color = zemin);
+  }
+
+  @override
+  bool shouldRepaint(_PastaCizer eski) =>
+      eski.kalemler != kalemler || eski.zemin != zemin;
+}

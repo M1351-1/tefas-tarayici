@@ -30,6 +30,16 @@ CREATE TABLE IF NOT EXISTS kategori (
     guncelleme   TEXT NOT NULL
 );
 
+-- Portfoy varlik dagilimi. Sadece EN SON gun tutulur (bkz. dagilim.py):
+-- gecmise donuk dagilim ne gosteriliyor ne de puanlamaya giriyor.
+CREATE TABLE IF NOT EXISTS dagilim (
+    fon_kodu   TEXT NOT NULL,
+    alan       TEXT NOT NULL,
+    yuzde      REAL NOT NULL,
+    tarih      TEXT NOT NULL,
+    PRIMARY KEY (fon_kodu, alan)
+);
+
 -- Cekim gecmisi: neyin ne zaman alindigini bilmek, "bugun cektim mi"
 -- sorusunu API'ye sormadan cevaplamayi saglar.
 CREATE TABLE IF NOT EXISTS cekim (
@@ -99,6 +109,32 @@ class Depo:
             "VALUES (?,?,?,?)", veri)
         self.baglanti.commit()
         return len(veri)
+
+    def dagilim_yaz(self, kalemler, tarih):
+        """kalemler: {fon_kodu: [(alan_kodu, etiket, yuzde), ...]}
+
+        Once tabloyu bosaltir: bir fonun portfoyunden cikan varlik sinifi,
+        eski satir kalirsa sonsuza kadar gorunmeye devam ederdi.
+        """
+        self.baglanti.execute("DELETE FROM dagilim")
+        veri = [(kod, alan, yuzde, tarih)
+                for kod, liste in kalemler.items()
+                for alan, _etiket, yuzde in liste]
+        if veri:
+            self.baglanti.executemany(
+                "INSERT OR REPLACE INTO dagilim (fon_kodu, alan, yuzde, tarih) "
+                "VALUES (?,?,?,?)", veri)
+        self.baglanti.commit()
+        return len(veri)
+
+    def dagilim_haritasi(self):
+        """{fon_kodu: [(alan_kodu, yuzde), ...]} - buyukten kucuge."""
+        harita = {}
+        for r in self.baglanti.execute(
+                "SELECT fon_kodu, alan, yuzde FROM dagilim "
+                "ORDER BY fon_kodu, yuzde DESC"):
+            harita.setdefault(r["fon_kodu"], []).append((r["alan"], r["yuzde"]))
+        return harita
 
     def cekim_kaydet(self, zaman, fon_tipi, baslangic, bitis, kayit):
         self.baglanti.execute(
