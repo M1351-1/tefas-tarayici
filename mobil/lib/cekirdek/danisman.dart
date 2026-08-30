@@ -11,12 +11,15 @@
 /// bilemez; buradaki işi ekrandaki sayıları karşılaştırıp Türkçe açıklamak.
 library;
 
+export 'api_hata.dart' show DanismanHatasi, hataCevir;
+
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_hata.dart';
 import 'modeller.dart';
 import 'secici.dart';
 
@@ -26,11 +29,40 @@ const String _surum = '2023-06-01';
 /// Varsayılan model. Ayarlardan değiştirilebilir.
 const String varsayilanModel = 'claude-sonnet-5';
 
+/// Yedek liste. Gerçek liste API'den (`/v1/models`) çekilir; bu sadece
+/// anahtar girilmeden önce dropdown boş kalmasın diye var.
 const Map<String, String> modelSecenekleri = {
-  'claude-haiku-4-5-20251001': 'Haiku 4.5 — en ucuz, en hızlı',
+  'claude-haiku-4-5': 'Haiku 4.5 — en ucuz, en hızlı',
   'claude-sonnet-5': 'Sonnet 5 — dengeli (önerilen)',
-  'claude-opus-5': 'Opus 5 — en güçlü, en pahalı',
+  'claude-opus-5': 'Opus 5 — en güçlü',
 };
+
+/// `output_config.effort` destekleyen modeller.
+///
+/// Haiku 4.5 desteklemiyor; ona gönderirsek istek 400 döner. Bu yüzden
+/// effort'u sadece destekleyen modellere yolluyoruz.
+const Set<String> _effortDestekleyen = {
+  'claude-fable-5',
+  'claude-opus-5',
+  'claude-sonnet-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+};
+
+/// max_tokens, DÜŞÜNME + YANIT toplamının sınırıdır.
+///
+/// Önce 1400 yazılmıştı; bu modellerde düşünme varsayılan olarak açık
+/// olduğu için o kadar dar bir sınır yanıtı yarıda kesebiliyor. 4096
+/// rahat bir tavan ve maliyeti artırmıyor: üretilmeyen token'ın ücreti
+/// yok, bu yalnızca üst sınır.
+const int azamiToken = 4096;
+
+/// Sohbet için `low` effort öneriliyor: bu ekranda yapılan iş ekrandaki
+/// tabloyu okuyup karşılaştırmak, uzun uzun düşünmeyi gerektirmiyor.
+/// Hem daha hızlı hem kullanıcının cebinden daha az çıkıyor.
+const String sohbetEffort = 'low';
 
 const String _sistemTalimati = '''
 Sen TEFAS fon verilerini okuyan bir analiz yardımcısısın. Türkiye'deki
@@ -55,16 +87,6 @@ KURALLAR:
 Yanıtının sonuna şu cümleyi ekle:
 "Bu bir yatırım tavsiyesi değildir; geçmiş verilerin özetidir."
 ''';
-
-class DanismanHatasi implements Exception {
-  final String mesaj;
-  final String oneri;
-
-  const DanismanHatasi(this.mesaj, [this.oneri = '']);
-
-  @override
-  String toString() => oneri.isEmpty ? mesaj : '$mesaj $oneri';
-}
 
 class AnahtarDeposu {
   static const _anahtar = 'claude_api_anahtari';
@@ -171,9 +193,11 @@ class Danisman {
             },
             body: jsonEncode({
               'model': model,
-              'max_tokens': 1400,
+              'max_tokens': azamiToken,
               'system': _sistemTalimati,
               'messages': mesajlar,
+              if (_effortDestekleyen.contains(model))
+                'output_config': {'effort': sohbetEffort},
             }),
           )
           .timeout(zamanAsimi);
@@ -184,29 +208,8 @@ class Danisman {
       );
     }
 
-    if (yanit.statusCode == 401) {
-      throw const DanismanHatasi(
-        'API anahtarı kabul edilmedi.',
-        'Ayarlardan anahtarınızı kontrol edin.',
-      );
-    }
-    if (yanit.statusCode == 429) {
-      throw const DanismanHatasi(
-        'Çok sık istek gönderildi.',
-        'Biraz bekleyip tekrar deneyin.',
-      );
-    }
-    if (yanit.statusCode == 400) {
-      throw const DanismanHatasi(
-        'İstek geçersiz.',
-        'Seçili model adı yanlış olabilir; ayarlardan değiştirin.',
-      );
-    }
     if (yanit.statusCode != 200) {
-      throw DanismanHatasi(
-        'Claude ${yanit.statusCode} döndürdü.',
-        'Daha sonra tekrar deneyin.',
-      );
+      throw hataCevir(yanit.statusCode, yanit.bodyBytes);
     }
 
     try {
@@ -226,5 +229,61 @@ class Danisman {
     } catch (e) {
       throw const DanismanHatasi('Yanıt çözümlenemedi.');
     }
+  }
+}
+
+/// Bir modelin kimliği ve okunur adı.
+class ModelBilgisi {
+  final String kimlik;
+  final String ad;
+
+  const ModelBilgisi(this.kimlik, this.ad);
+}
+
+/// Hesabın erişebildiği modelleri API'den sorar.
+///
+/// Neden sabit liste değil: hangi modellerin var olduğunu tahmin etmek,
+/// kullanıcıyı var olmayan bir modele yönlendirmek demek. API zaten
+/// biliyor; sormak bir istek ve kesin cevap.
+///
+/// Aynı zamanda BAĞLANTI SINAMASI olarak kullanılıyor: bu çağrı
+/// başarılıysa anahtar geçerli ve ağ açık demektir.
+Future<List<ModelBilgisi>> modelleriGetir(String anahtar,
+    {Duration zamanAsimi = const Duration(seconds: 30)}) async {
+  late http.Response yanit;
+  try {
+    yanit = await http.get(
+      Uri.parse('https://api.anthropic.com/v1/models?limit=50'),
+      headers: {'x-api-key': anahtar, 'anthropic-version': _surum},
+    ).timeout(zamanAsimi);
+  } catch (_) {
+    throw const DanismanHatasi(
+      'Anthropic sunucusuna ulaşılamadı.',
+      'İnternet bağlantınızı kontrol edin.',
+    );
+  }
+
+  if (yanit.statusCode != 200) {
+    throw hataCevir(yanit.statusCode, yanit.bodyBytes);
+  }
+
+  try {
+    final j = jsonDecode(utf8.decode(yanit.bodyBytes)) as Map<String, dynamic>;
+    final liste = <ModelBilgisi>[];
+    for (final m in (j['data'] as List? ?? const [])) {
+      if (m is! Map) continue;
+      final kimlik = m['id'];
+      if (kimlik is! String) continue;
+      liste.add(ModelBilgisi(
+          kimlik, (m['display_name'] as String?) ?? kimlik));
+    }
+    if (liste.isEmpty) {
+      throw const DanismanHatasi('Model listesi boş döndü.');
+    }
+    return liste;
+  } on DanismanHatasi {
+    rethrow;
+  } catch (_) {
+    throw const DanismanHatasi('Model listesi çözümlenemedi.');
   }
 }

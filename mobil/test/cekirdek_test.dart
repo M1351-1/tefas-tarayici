@@ -10,6 +10,7 @@ library;
 import 'dart:convert';
 
 import 'package:test/test.dart';
+import 'package:tefas_mobil/cekirdek/api_hata.dart';
 import 'package:tefas_mobil/cekirdek/modeller.dart';
 import 'package:tefas_mobil/cekirdek/puanlama.dart';
 import 'package:tefas_mobil/cekirdek/secici.dart';
@@ -389,6 +390,7 @@ void main() {
 
   dagilimTestleri();
   olcuTestleri();
+  hataTestleri();
 }
 
 List<Fon> evrenBasit() => [
@@ -586,6 +588,65 @@ void olcuTestleri() {
       final fonlar = [Fon.jsondan(zenginFon())];
       final s = sec(fonlar, const Profil(risk: RiskToleransi.yuksek));
       expect(s.adaylar, isNotEmpty);
+    });
+  });
+}
+
+// -------------------------------------------------------- Claude hata çevirisi
+
+void hataTestleri() {
+  List<int> govde(Object j) => utf8.encode(jsonEncode(j));
+
+  group('API hata mesajı', () {
+    test('sunucunun kendi mesajı gösterilir', () {
+      // Asıl kusur buydu: 400 için sabit bir tahmin ("model adı yanlış
+      // olabilir") gösteriliyordu ve kullanıcı boşuna model değiştirdi.
+      final h = hataCevir(400, govde({
+        'type': 'error',
+        'error': {'type': 'invalid_request_error', 'message': 'max_tokens: 1400 > 1024'}
+      }));
+      expect(h.mesaj, contains('reddetti'));
+      expect(h.oneri, contains('max_tokens: 1400 > 1024'));
+    });
+
+    test('400 artık model adını suçlamıyor', () {
+      final h = hataCevir(400, govde({
+        'error': {'message': 'credit balance is too low'}
+      }));
+      expect('${h.mesaj} ${h.oneri}'.toLowerCase(), isNot(contains('model adı')));
+    });
+
+    test('401 anahtar sorununu söyler', () {
+      final h = hataCevir(401, govde({
+        'error': {'message': 'invalid x-api-key'}
+      }));
+      expect(h.mesaj, contains('anahtar'));
+      expect(h.oneri, contains('invalid x-api-key'));
+    });
+
+    test('429 bekleme önerir', () {
+      final h = hataCevir(429, govde({'error': {'message': 'rate limit'}}));
+      expect(h.oneri, contains('bekleyip'));
+    });
+
+    test('500 geçici sorun der', () {
+      final h = hataCevir(503, govde({'error': {'message': 'overloaded'}}));
+      expect(h.mesaj, contains('geçici'));
+    });
+
+    test('JSON olmayan gövde çökertmez', () {
+      final h = hataCevir(400, utf8.encode('<html>502 Bad Gateway</html>'));
+      expect(h.mesaj, isNotEmpty);
+    });
+
+    test('boş gövde çökertmez', () {
+      final h = hataCevir(500, const <int>[]);
+      expect(h.mesaj, isNotEmpty);
+    });
+
+    test('bilinmeyen kod numarayı gösterir', () {
+      final h = hataCevir(418, const <int>[]);
+      expect(h.mesaj, contains('418'));
     });
   });
 }

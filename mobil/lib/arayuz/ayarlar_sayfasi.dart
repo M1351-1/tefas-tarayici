@@ -26,6 +26,50 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
   String _model = varsayilanModel;
   bool _yukleniyor = true;
 
+  /// API'den çekilen gerçek model listesi. null ise henüz sınanmadı.
+  List<ModelBilgisi>? _modeller;
+  bool _sinaniyor = false;
+  String? _sinamaHatasi;
+  String? _sinamaBasarili;
+
+  /// Anahtarı sınar ve modelleri getirir.
+  ///
+  /// Aynı çağrı iki işi birden yapıyor: `/v1/models` başarılıysa anahtar
+  /// geçerli, ağ açık ve elimizde hesabın erişebildiği gerçek model
+  /// listesi var demektir. Model adını tahmin etmektense sormak.
+  Future<void> _sina() async {
+    setState(() {
+      _sinaniyor = true;
+      _sinamaHatasi = null;
+      _sinamaBasarili = null;
+    });
+    try {
+      final anahtar = await _depo.oku();
+      if (anahtar == null || anahtar.isEmpty) {
+        throw const DanismanHatasi('Önce anahtar girin.');
+      }
+      final liste = await modelleriGetir(anahtar);
+      if (!mounted) return;
+      setState(() {
+        _modeller = liste;
+        _sinaniyor = false;
+        _sinamaBasarili = 'Bağlantı çalışıyor. ${liste.length} model bulundu.';
+        // Kayıtlı model listede yoksa ilkine geç: olmayan bir modele
+        // istek atmaya devam etmenin anlamı yok.
+        if (!liste.any((m) => m.kimlik == _model)) {
+          _model = liste.first.kimlik;
+          _depo.modelYaz(_model);
+        }
+      });
+    } on DanismanHatasi catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sinaniyor = false;
+        _sinamaHatasi = e.oneri.isEmpty ? e.mesaj : '${e.mesaj}\n${e.oneri}';
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -154,26 +198,81 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
           ),
           if (_anahtarVar) ...[
             const SizedBox(height: 4),
-            DropdownButtonFormField<String>(
-              initialValue: _model,
-              decoration: const InputDecoration(
-                labelText: 'Model',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              items: [
-                for (final e in modelSecenekleri.entries)
-                  DropdownMenuItem(
-                      value: e.key,
-                      child: Text(e.value,
-                          style: tema.textTheme.bodySmall)),
-              ],
-              onChanged: (v) async {
-                if (v == null) return;
-                await _depo.modelYaz(v);
-                setState(() => _model = v);
-              },
+            Builder(builder: (_) {
+              // Liste sınandıysa gerçek modeller, sınanmadıysa yedek liste.
+              final secenekler = _modeller != null
+                  ? {for (final m in _modeller!) m.kimlik: m.ad}
+                  : Map<String, String>.from(modelSecenekleri);
+              // Kayıtlı model listede yoksa ekle; yoksa dropdown çöker.
+              secenekler.putIfAbsent(_model, () => _model);
+              return DropdownButtonFormField<String>(
+                initialValue: _model,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Model',
+                  helperText: _modeller == null
+                      ? 'Sınanmadı — aşağıdaki düğmeye basın'
+                      : 'Hesabınızın erişebildiği modeller',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  for (final e in secenekler.entries)
+                    DropdownMenuItem(
+                        value: e.key,
+                        child: Text(e.value,
+                            overflow: TextOverflow.ellipsis,
+                            style: tema.textTheme.bodySmall)),
+                ],
+                onChanged: (v) async {
+                  if (v == null) return;
+                  await _depo.modelYaz(v);
+                  setState(() => _model = v);
+                },
+              );
+            }),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _sinaniyor ? null : _sina,
+              icon: _sinaniyor
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.network_check),
+              label: Text(_sinaniyor
+                  ? 'Sınanıyor...'
+                  : 'Bağlantıyı sına ve modelleri getir'),
             ),
+            if (_sinamaBasarili != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.check_circle_outline,
+                        size: 16, color: Colors.green.shade600),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(_sinamaBasarili!,
+                          style: tema.textTheme.bodySmall
+                              ?.copyWith(color: Colors.green.shade600)),
+                    ),
+                  ],
+                ),
+              ),
+            if (_sinamaHatasi != null)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tema.colorScheme.errorContainer.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                // Sunucunun kendi mesajı burada görünür; kopyalanabilir
+                // olması hatayı bildirmeyi kolaylaştırıyor.
+                child: SelectableText(_sinamaHatasi!,
+                    style: tema.textTheme.bodySmall),
+              ),
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () async {

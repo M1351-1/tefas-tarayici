@@ -221,7 +221,10 @@ class _DanismanSayfasiDurumu extends State<DanismanSayfasi> {
                           .withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(_hata!, style: tema.textTheme.bodySmall),
+                    // Seçilebilir: sunucunun kendi hata mesajı burada
+                    // görünüyor ve kopyalanabilmesi teşhisi kolaylaştırıyor.
+                    child: SelectableText(_hata!,
+                        style: tema.textTheme.bodySmall),
                   ),
                 const SizedBox(height: 12),
               ],
