@@ -50,10 +50,12 @@ class _AnaKabukDurumu extends State<AnaKabuk> {
             IconButton(
               icon: const Icon(Icons.star_outline),
               tooltip: 'Favoriler',
+              // Burada Kapsam ile sarmalamaya gerek yok: Kapsam artık
+              // MaterialApp'in üstünde, yani her rota onun altında.
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => Scaffold(
                   appBar: AppBar(title: const Text('Favoriler')),
-                  body: Kapsam(durum: durum, child: const FavorilerSayfasi()),
+                  body: const FavorilerSayfasi(),
                 ),
               )),
             ),

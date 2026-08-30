@@ -35,15 +35,28 @@ class Uygulama extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: durum.ayarlar,
-      builder: (context, _) => MaterialApp(
-        title: 'TEFAS Fon Tarayıcı',
-        debugShowCheckedModeBanner: false,
-        theme: _tema(Brightness.light),
-        darkTheme: _tema(Brightness.dark),
-        themeMode: durum.ayarlar.tema,
-        home: Kapsam(durum: durum, child: const AnaKabuk()),
+    // Kapsam MaterialApp'in USTUNDE olmak ZORUNDA.
+    //
+    // Önce `home: Kapsam(child: AnaKabuk())` yazılmıştı ve bu, açılış
+    // ekranı dışındaki her sayfayı bozuyordu: Navigator da MaterialApp'in
+    // içinde olduğu için `push` edilen sayfa Kapsam'ın altında değil,
+    // KARDEŞİ oluyor. Fon detayında `Kapsam.of(context)` null dönüyor,
+    // release derlemesinde assert'ler silindiği için `!` patlıyor ve
+    // kullanıcı boş gri bir ekran görüyordu.
+    //
+    // Kapsam yukarı alınınca Navigator ve bütün rotalar onun altında kalır.
+    return Kapsam(
+      durum: durum,
+      child: ListenableBuilder(
+        listenable: durum.ayarlar,
+        builder: (context, _) => MaterialApp(
+          title: 'TEFAS Fon Tarayıcı',
+          debugShowCheckedModeBanner: false,
+          theme: _tema(Brightness.light),
+          darkTheme: _tema(Brightness.dark),
+          themeMode: durum.ayarlar.tema,
+          home: const AnaKabuk(),
+        ),
       ),
     );
   }
