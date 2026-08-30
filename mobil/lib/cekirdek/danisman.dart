@@ -11,7 +11,9 @@
 /// bilemez; buradaki işi ekrandaki sayıları karşılaştırıp Türkçe açıklamak.
 library;
 
-export 'api_hata.dart' show DanismanHatasi, hataCevir;
+export 'api_hata.dart'
+    show DanismanHatasi, hataCevir, calismaAlaniGerekiyor,
+        calismaAlaniSorunu, anahtarSorunu;
 
 import 'dart:convert';
 

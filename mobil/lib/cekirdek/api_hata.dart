@@ -78,3 +78,44 @@ bool calismaAlaniGerekiyor(String apiMesaji) {
   final m = apiMesaji.toLowerCase();
   return m.contains('workspace') && m.contains('required');
 }
+
+// --------------------------------------------------------- biçim denetimi
+//
+// İki alan da uzun, rastgele görünen metinler alıyor ve yanlış kutuya
+// yapıştırmak çok kolay. Bir kullanıcı API anahtarını çalışma alanı
+// kutusuna yapıştırdı; uygulama sessizce kabul etti, sonra da anahtarı
+// ayarlar ekranında düz metin olarak gösterdi. Kabul etmemesi gerekirdi.
+
+const String _anahtarOneki = 'sk-ant-';
+const String _calismaAlaniOneki = 'wrkspc_';
+
+/// Çalışma alanı kimliği kutusuna girilen değerin sorunu (yoksa null).
+String? calismaAlaniSorunu(String deger) {
+  final d = deger.trim();
+  if (d.isEmpty) return null; // boş bırakmak serbest, çoğu anahtarda gerekmez
+  if (d.startsWith(_anahtarOneki)) {
+    return 'Bu bir API ANAHTARI, çalışma alanı kimliği değil. '
+        'Anahtarı bu kutuya yapıştırmayın — üstteki "Anahtar" satırına '
+        'girilir. Çalışma alanı kimliği wrkspc_ ile başlar.';
+  }
+  if (!d.startsWith(_calismaAlaniOneki)) {
+    return 'Çalışma alanı kimliği wrkspc_ ile başlar. '
+        'platform.claude.com/settings/workspaces adresinden alın.';
+  }
+  return null;
+}
+
+/// API anahtarı kutusuna girilen değerin sorunu (yoksa null).
+String? anahtarSorunu(String deger) {
+  final d = deger.trim();
+  if (d.isEmpty) return null; // boş = anahtarı sil
+  if (d.startsWith(_calismaAlaniOneki)) {
+    return 'Bu bir çalışma alanı kimliği, API anahtarı değil. '
+        'Anahtar sk-ant- ile başlar.';
+  }
+  if (!d.startsWith(_anahtarOneki)) {
+    return 'Anthropic API anahtarları sk-ant- ile başlar. '
+        'platform.claude.com/settings/keys adresinden alın.';
+  }
+  return null;
+}

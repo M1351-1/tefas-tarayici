@@ -204,12 +204,28 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Çalışma alanı kimliği'),
-              subtitle: Text(
-                _calismaAlani == null || _calismaAlani!.isEmpty
-                    ? 'Girilmedi — çoğu anahtar için gerekmez'
-                    : _calismaAlani!,
-                style: tema.textTheme.bodySmall,
-              ),
+              // Kayıtlı değer geçersizse EKRANDA GÖSTERİLMEZ.
+              // Bir kullanıcı buraya API anahtarını yapıştırdı ve anahtar
+              // ayarlar ekranında düz metin olarak göründü. Biçim tutmayan
+              // bir değeri yazdırmak, sır olmaması gerekeni sır hâline
+              // getirilmiş olarak ifşa etme riski taşıyor.
+              subtitle: Builder(builder: (_) {
+                final d = _calismaAlani;
+                if (d == null || d.isEmpty) {
+                  return Text('Girilmedi — çoğu anahtar için gerekmez',
+                      style: tema.textTheme.bodySmall);
+                }
+                final sorun = calismaAlaniSorunu(d);
+                if (sorun != null) {
+                  return Text(
+                    'Kayıtlı değer geçersiz — "Değiştir" ile düzeltin. '
+                    'Buraya API anahtarı girdiyseniz o anahtarı iptal edin.',
+                    style: tema.textTheme.bodySmall
+                        ?.copyWith(color: tema.colorScheme.error),
+                  );
+                }
+                return Text(d, style: tema.textTheme.bodySmall);
+              }),
               trailing: TextButton(
                 onPressed: () => _calismaAlaniDialog(context),
                 child: Text(_calismaAlani == null || _calismaAlani!.isEmpty
@@ -378,95 +394,104 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
   }
 
   Future<void> _anahtarDialog(BuildContext context) async {
-    final denetleyici = TextEditingController();
-    final sonuc = await showDialog<String>(
+    final sonuc = await _dogrulamaliGiris(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Anthropic API anahtarı'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'console.anthropic.com adresinden aldığınız anahtarı yapıştırın. '
-              'Anahtar cihazın şifreli deposuna yazılır, başka hiçbir yere '
-              'gönderilmez.',
-              style: TextStyle(fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: denetleyici,
-              obscureText: true,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'sk-ant-...',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c), child: const Text('Vazgeç')),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, denetleyici.text),
-            child: const Text('Kaydet'),
-          ),
-        ],
-      ),
+      baslik: 'Anthropic API anahtarı',
+      aciklama: 'platform.claude.com/settings/keys adresinden aldığınız '
+          'anahtarı yapıştırın. Anahtar cihazın şifreli deposuna yazılır, '
+          'Anthropic dışında hiçbir yere gönderilmez.',
+      ipucu: 'sk-ant-...',
+      dogrula: anahtarSorunu,
+      gizle: true,
     );
-    if (sonuc != null) {
-      await _depo.yaz(sonuc);
-      await _yukle();
-    }
+    if (sonuc == null) return;
+    await _depo.yaz(sonuc);
+    await _yukle();
   }
 
-  /// Çalışma alanı kimliği girişi.
+  /// Doğrulamalı metin girişi.
   ///
-  /// Kimliğe bağlı (identity-linked) anahtarlarda API bu bilgiyi zorunlu
-  /// tutuyor; anahtar birden fazla çalışma alanına erişebildiği için
-  /// hangisinde işlem yapıldığını ayrıca soruyor.
-  Future<void> _calismaAlaniDialog(BuildContext context) async {
-    final denetleyici = TextEditingController(text: _calismaAlani ?? '');
-    final sonuc = await showDialog<String>(
+  /// Anahtar ve çalışma alanı kimliği birbirine çok benzeyen, uzun,
+  /// rastgele metinler. Bir kullanıcı anahtarı çalışma alanı kutusuna
+  /// yapıştırdı; uygulama kabul edip ekranda düz metin gösterdi.
+  /// Artık biçim tutmuyorsa KAYDETMİYOR ve nedenini söylüyor.
+  Future<String?> _dogrulamaliGiris({
+    required BuildContext context,
+    required String baslik,
+    required String aciklama,
+    required String ipucu,
+    required String? Function(String) dogrula,
+    String baslangic = '',
+    bool gizle = false,
+    bool temizleDugmesi = false,
+  }) async {
+    final denetleyici = TextEditingController(text: baslangic);
+    String? hata;
+    return showDialog<String>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Çalışma alanı kimliği'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Çoğu anahtar için gerekmez. Ama "anthropic-workspace-id is '
-              'required" hatası aldıysanız buraya girin.\n\n'
-              'platform.claude.com/settings/workspaces adresinde, '
-              'kullandığınız çalışma alanının wrkspc_ ile başlayan '
-              'kimliği yazıyor.',
-              style: TextStyle(fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: denetleyici,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'wrkspc_...',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (c) => StatefulBuilder(
+        builder: (c, yenile) => AlertDialog(
+          title: Text(baslik),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(aciklama, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: denetleyici,
+                obscureText: gizle,
+                autofocus: true,
+                onChanged: (_) {
+                  if (hata != null) yenile(() => hata = null);
+                },
+                decoration: InputDecoration(
+                  hintText: ipucu,
+                  errorText: hata,
+                  errorMaxLines: 4,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c), child: const Text('Vazgeç')),
+            if (temizleDugmesi)
+              TextButton(
+                  onPressed: () => Navigator.pop(c, ''),
+                  child: const Text('Temizle')),
+            FilledButton(
+              onPressed: () {
+                final sorun = dogrula(denetleyici.text);
+                if (sorun != null) {
+                  yenile(() => hata = sorun);
+                  return;
+                }
+                Navigator.pop(c, denetleyici.text.trim());
+              },
+              child: const Text('Kaydet'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c), child: const Text('Vazgeç')),
-          TextButton(
-              onPressed: () => Navigator.pop(c, ''),
-              child: const Text('Temizle')),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, denetleyici.text),
-            child: const Text('Kaydet'),
-          ),
-        ],
       ),
+    );
+  }
+
+  Future<void> _calismaAlaniDialog(BuildContext context) async {
+    final sonuc = await _dogrulamaliGiris(
+      context: context,
+      baslik: 'Çalışma alanı kimliği',
+      aciklama: 'Çoğu anahtar için gerekmez. Ama "anthropic-workspace-id is '
+          'required" hatası aldıysanız buraya girin.\n\n'
+          'platform.claude.com/settings/workspaces adresinde, '
+          'kullandığınız çalışma alanının wrkspc_ ile başlayan kimliği '
+          'yazıyor. BURAYA API ANAHTARI GİRİLMEZ.',
+      ipucu: 'wrkspc_...',
+      baslangic: _calismaAlani ?? '',
+      dogrula: calismaAlaniSorunu,
+      temizleDugmesi: true,
     );
     if (sonuc == null) return;
     await _depo.calismaAlaniYaz(sonuc);

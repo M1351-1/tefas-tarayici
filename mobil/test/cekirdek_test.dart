@@ -392,6 +392,7 @@ void main() {
   olcuTestleri();
   hataTestleri();
   calismaAlaniTestleri();
+  bicimTestleri();
 }
 
 List<Fon> evrenBasit() => [
@@ -680,6 +681,50 @@ void calismaAlaniTestleri() {
     test('diğer 400 hatalarında bu yönlendirme çıkmaz', () {
       final h = hataCevir(400, govde({'error': {'message': 'max_tokens too small'}}));
       expect(h.oneri, isNot(contains('wrkspc_')));
+    });
+  });
+}
+
+void bicimTestleri() {
+  group('Alan biçim denetimi', () {
+    test('API anahtarı çalışma alanı kutusuna girilirse reddedilir', () {
+      // Gercekten yasandi: kullanici sk-ant-... degerini calisma alani
+      // kutusuna yapistirdi, uygulama kabul etti ve ekranda gosterdi.
+      final sorun = calismaAlaniSorunu('sk-ant-api03-BvGXVxscygdQIYiCnLY');
+      expect(sorun, isNotNull);
+      expect(sorun, contains('API ANAHTARI'));
+    });
+
+    test('geçerli çalışma alanı kimliği kabul edilir', () {
+      expect(calismaAlaniSorunu('wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ'), isNull);
+    });
+
+    test('çalışma alanı boş bırakılabilir', () {
+      expect(calismaAlaniSorunu(''), isNull);
+      expect(calismaAlaniSorunu('   '), isNull);
+    });
+
+    test('alakasız metin reddedilir', () {
+      expect(calismaAlaniSorunu('benim workspace'), isNotNull);
+    });
+
+    test('çalışma alanı kimliği anahtar kutusuna girilirse reddedilir', () {
+      final sorun = anahtarSorunu('wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ');
+      expect(sorun, isNotNull);
+      expect(sorun, contains('çalışma alanı kimliği'));
+    });
+
+    test('geçerli anahtar kabul edilir', () {
+      expect(anahtarSorunu('sk-ant-api03-xxxxx'), isNull);
+    });
+
+    test('boş anahtar kabul edilir (silme)', () {
+      expect(anahtarSorunu(''), isNull);
+    });
+
+    test('baştaki boşluklar sorun değil', () {
+      expect(calismaAlaniSorunu('  wrkspc_abc  '), isNull);
+      expect(anahtarSorunu('  sk-ant-abc  '), isNull);
     });
   });
 }
