@@ -391,6 +391,7 @@ void main() {
   dagilimTestleri();
   olcuTestleri();
   hataTestleri();
+  calismaAlaniTestleri();
 }
 
 List<Fon> evrenBasit() => [
@@ -647,6 +648,38 @@ void hataTestleri() {
     test('bilinmeyen kod numarayı gösterir', () {
       final h = hataCevir(418, const <int>[]);
       expect(h.mesaj, contains('418'));
+    });
+  });
+}
+
+void calismaAlaniTestleri() {
+  List<int> govde(Object j) => utf8.encode(jsonEncode(j));
+
+  group('Çalışma alanı hatası', () {
+    // Kullanicinin gercekten aldigi mesaj.
+    const gercekMesaj = 'anthropic-workspace-id is required when '
+        'authenticating with an identity-linked API key; send the id of '
+        'the workspace this request acts in.';
+
+    test('tanınır', () {
+      expect(calismaAlaniGerekiyor(gercekMesaj), isTrue);
+    });
+
+    test('alakasız hata tanınmaz', () {
+      expect(calismaAlaniGerekiyor('credit balance is too low'), isFalse);
+    });
+
+    test('Türkçe yönlendirme verilir', () {
+      final h = hataCevir(400, govde({'error': {'message': gercekMesaj}}));
+      expect(h.oneri, contains('Çalışma alanı kimliği'));
+      expect(h.oneri, contains('wrkspc_'));
+      // Sunucunun kendi mesajı da kalmalı: teşhis kaybolmasın.
+      expect(h.oneri, contains('identity-linked'));
+    });
+
+    test('diğer 400 hatalarında bu yönlendirme çıkmaz', () {
+      final h = hataCevir(400, govde({'error': {'message': 'max_tokens too small'}}));
+      expect(h.oneri, isNot(contains('wrkspc_')));
     });
   });
 }

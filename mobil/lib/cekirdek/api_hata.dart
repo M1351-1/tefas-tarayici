@@ -47,7 +47,7 @@ DanismanHatasi hataCevir(int kod, List<int> govde) {
     _ => 'Claude $kod döndürdü.',
   };
 
-  final oneri = switch (kod) {
+  var oneri = switch (kod) {
     401 => 'Ayarlardan anahtarınızı kontrol edin.',
     402 || 403 => 'Hesabınızda bakiye olduğundan emin olun.',
     429 => 'Biraz bekleyip tekrar deneyin.',
@@ -55,7 +55,26 @@ DanismanHatasi hataCevir(int kod, List<int> govde) {
     _ => '',
   };
 
+  // Çalışma alanı kimliği eksikse ne yapılacağını Türkçe söyle.
+  //
+  // Sunucunun mesajı doğru ama İngilizce ve nereden alınacağını
+  // söylemiyor. Bu hata, kimliğe bağlı (identity-linked) anahtarlarda
+  // çıkıyor: anahtar birden fazla çalışma alanına erişebildiği için
+  // hangisinde işlem yapıldığını ayrıca bildirmek gerekiyor.
+  if (apiMesaji != null && calismaAlaniGerekiyor(apiMesaji)) {
+    oneri = 'Anahtarınız hangi çalışma alanında işlem yapacağını da '
+        'istiyor. Ayarlar → "Çalışma alanı kimliği" alanına '
+        'platform.claude.com/settings/workspaces adresindeki '
+        'wrkspc_ ile başlayan değeri girin.';
+  }
+
   // Sunucunun kendi mesajı varsa onu ekle: asıl teşhis orada.
   return DanismanHatasi(
       baslik, apiMesaji != null ? '$oneri\n\nSunucu: $apiMesaji'.trim() : oneri);
+}
+
+/// Hata mesajı "çalışma alanı kimliği lazım" diyor mu?
+bool calismaAlaniGerekiyor(String apiMesaji) {
+  final m = apiMesaji.toLowerCase();
+  return m.contains('workspace') && m.contains('required');
 }

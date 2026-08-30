@@ -43,6 +43,7 @@ class _DanismanSayfasiDurumu extends State<DanismanSayfasi> {
 
   String? _anahtar;
   String _model = varsayilanModel;
+  String? _calismaAlani;
   bool _hazirlaniyor = true;
   bool _bekleniyor = false;
   String? _hata;
@@ -57,10 +58,12 @@ class _DanismanSayfasiDurumu extends State<DanismanSayfasi> {
   Future<void> _yukle() async {
     final a = await _depo.oku();
     final m = await _depo.modelOku();
+    final c = await _depo.calismaAlaniOku();
     if (mounted) {
       setState(() {
         _anahtar = a;
         _model = m;
+        _calismaAlani = c;
         _hazirlaniyor = false;
       });
     }
@@ -94,7 +97,9 @@ class _DanismanSayfasiDurumu extends State<DanismanSayfasi> {
     baglam.write(tabloYap(widget.fonlar));
 
     try {
-      final yanit = await Danisman(anahtar: anahtar, model: _model).sor(
+      final yanit = await Danisman(
+              anahtar: anahtar, model: _model, calismaAlani: _calismaAlani)
+          .sor(
         soru: soru.trim(),
         baglam: baglam.toString(),
         // Önceki tur soru-cevabı bağlam olarak taşı ki takip sorusu

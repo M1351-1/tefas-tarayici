@@ -91,6 +91,7 @@ Yanıtının sonuna şu cümleyi ekle:
 class AnahtarDeposu {
   static const _anahtar = 'claude_api_anahtari';
   static const _model = 'claude_model';
+  static const _calismaAlani = 'claude_calisma_alani';
 
   final FlutterSecureStorage _depo = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -120,6 +121,28 @@ class AnahtarDeposu {
       (await _depo.read(key: _model)) ?? varsayilanModel;
 
   Future<void> modelYaz(String m) => _depo.write(key: _model, value: m);
+
+  /// Çalışma alanı kimliği (wrkspc_...).
+  ///
+  /// Kimliğe bağlı (identity-linked) anahtarlarda ZORUNLU: anahtar
+  /// birden fazla çalışma alanına erişebildiği için API hangisinde
+  /// işlem yapıldığını ayrıca soruyor. Diğer anahtarlarda boş kalır.
+  Future<String?> calismaAlaniOku() async {
+    try {
+      return await _depo.read(key: _calismaAlani);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> calismaAlaniYaz(String deger) async {
+    final temiz = deger.trim();
+    if (temiz.isEmpty) {
+      await _depo.delete(key: _calismaAlani);
+    } else {
+      await _depo.write(key: _calismaAlani, value: temiz);
+    }
+  }
 
   Future<bool> anahtarVar() async {
     final a = await oku();
@@ -158,11 +181,13 @@ String profilMetni(Profil p) {
 class Danisman {
   final String anahtar;
   final String model;
+  final String? calismaAlani;
   final Duration zamanAsimi;
 
   const Danisman({
     required this.anahtar,
     this.model = varsayilanModel,
+    this.calismaAlani,
     this.zamanAsimi = const Duration(seconds: 60),
   });
 
@@ -190,6 +215,10 @@ class Danisman {
               'content-type': 'application/json',
               'x-api-key': anahtar,
               'anthropic-version': _surum,
+              // Sadece doluysa gönder: gereksiz yere göndermek diğer
+              // anahtar tiplerinde soruna yol açabilir.
+              if (calismaAlani != null && calismaAlani!.isNotEmpty)
+                'anthropic-workspace-id': calismaAlani!,
             },
             body: jsonEncode({
               'model': model,
@@ -249,12 +278,18 @@ class ModelBilgisi {
 /// Aynı zamanda BAĞLANTI SINAMASI olarak kullanılıyor: bu çağrı
 /// başarılıysa anahtar geçerli ve ağ açık demektir.
 Future<List<ModelBilgisi>> modelleriGetir(String anahtar,
-    {Duration zamanAsimi = const Duration(seconds: 30)}) async {
+    {String? calismaAlani,
+    Duration zamanAsimi = const Duration(seconds: 30)}) async {
   late http.Response yanit;
   try {
     yanit = await http.get(
       Uri.parse('https://api.anthropic.com/v1/models?limit=50'),
-      headers: {'x-api-key': anahtar, 'anthropic-version': _surum},
+      headers: {
+        'x-api-key': anahtar,
+        'anthropic-version': _surum,
+        if (calismaAlani != null && calismaAlani.isNotEmpty)
+          'anthropic-workspace-id': calismaAlani,
+      },
     ).timeout(zamanAsimi);
   } catch (_) {
     throw const DanismanHatasi(

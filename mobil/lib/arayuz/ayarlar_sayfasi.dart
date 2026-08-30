@@ -28,6 +28,7 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
 
   /// API'den çekilen gerçek model listesi. null ise henüz sınanmadı.
   List<ModelBilgisi>? _modeller;
+  String? _calismaAlani;
   bool _sinaniyor = false;
   String? _sinamaHatasi;
   String? _sinamaBasarili;
@@ -48,7 +49,8 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
       if (anahtar == null || anahtar.isEmpty) {
         throw const DanismanHatasi('Önce anahtar girin.');
       }
-      final liste = await modelleriGetir(anahtar);
+      final liste = await modelleriGetir(anahtar,
+          calismaAlani: await _depo.calismaAlaniOku());
       if (!mounted) return;
       setState(() {
         _modeller = liste;
@@ -79,10 +81,12 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
   Future<void> _yukle() async {
     final v = await _depo.anahtarVar();
     final m = await _depo.modelOku();
+    final c = await _depo.calismaAlaniOku();
     if (mounted) {
       setState(() {
         _anahtarVar = v;
         _model = m;
+        _calismaAlani = c;
         _yukleniyor = false;
       });
     }
@@ -197,6 +201,22 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
             ),
           ),
           if (_anahtarVar) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Çalışma alanı kimliği'),
+              subtitle: Text(
+                _calismaAlani == null || _calismaAlani!.isEmpty
+                    ? 'Girilmedi — çoğu anahtar için gerekmez'
+                    : _calismaAlani!,
+                style: tema.textTheme.bodySmall,
+              ),
+              trailing: TextButton(
+                onPressed: () => _calismaAlaniDialog(context),
+                child: Text(_calismaAlani == null || _calismaAlani!.isEmpty
+                    ? 'Ekle'
+                    : 'Değiştir'),
+              ),
+            ),
             const SizedBox(height: 4),
             Builder(builder: (_) {
               // Liste sınandıysa gerçek modeller, sınanmadıysa yedek liste.
@@ -399,6 +419,58 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
       await _depo.yaz(sonuc);
       await _yukle();
     }
+  }
+
+  /// Çalışma alanı kimliği girişi.
+  ///
+  /// Kimliğe bağlı (identity-linked) anahtarlarda API bu bilgiyi zorunlu
+  /// tutuyor; anahtar birden fazla çalışma alanına erişebildiği için
+  /// hangisinde işlem yapıldığını ayrıca soruyor.
+  Future<void> _calismaAlaniDialog(BuildContext context) async {
+    final denetleyici = TextEditingController(text: _calismaAlani ?? '');
+    final sonuc = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Çalışma alanı kimliği'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Çoğu anahtar için gerekmez. Ama "anthropic-workspace-id is '
+              'required" hatası aldıysanız buraya girin.\n\n'
+              'platform.claude.com/settings/workspaces adresinde, '
+              'kullandığınız çalışma alanının wrkspc_ ile başlayan '
+              'kimliği yazıyor.',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: denetleyici,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'wrkspc_...',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c), child: const Text('Vazgeç')),
+          TextButton(
+              onPressed: () => Navigator.pop(c, ''),
+              child: const Text('Temizle')),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, denetleyici.text),
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    );
+    if (sonuc == null) return;
+    await _depo.calismaAlaniYaz(sonuc);
+    await _yukle();
   }
 
   Future<void> _adresDialog(BuildContext context, Ayarlar ayarlar) async {
