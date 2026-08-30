@@ -388,6 +388,7 @@ void main() {
   });
 
   dagilimTestleri();
+  olcuTestleri();
 }
 
 List<Fon> evrenBasit() => [
@@ -452,6 +453,139 @@ void dagilimTestleri() {
       });
       expect(g.dagilim.length, 1);
       expect(g.dagilim.first.yuzde, 0);
+    });
+  });
+}
+
+// ------------------------------------------------ net getiri / ölçüt / istikrar
+
+void olcuTestleri() {
+  Map<String, dynamic> zenginFon({
+    double? netYillik = 96.0,
+    double? stopaj = 0.0,
+    double? riskAyarli = 1.8,
+    List<int>? istikrar = const [10, 12],
+    double? yerliHisse = 91.0,
+  }) {
+    final j = fonJson(kod: 'ZEN', yillik: 96.0);
+    j['net_yillik'] = netYillik;
+    j['stopaj'] = stopaj;
+    j['stopaj_gerekce'] = 'Portföyünün %91\'i yerli hisse senedi.';
+    j['yerli_hisse'] = yerliHisse;
+    j['risk_ayarli'] = riskAyarli;
+    j['istikrar'] = istikrar;
+    return j;
+  }
+
+  group('Net getiri ve stopaj', () {
+    test('alanlar çözümlenir', () {
+      final f = Fon.jsondan(zenginFon());
+      expect(f.netYillik, 96.0);
+      expect(f.stopaj, 0.0);
+      expect(f.stopajsiz, isTrue);
+      expect(f.yerliHisse, 91.0);
+      expect(f.riskAyarli, 1.8);
+    });
+
+    test('stopajlı fon muaf sayılmaz', () {
+      final f = Fon.jsondan(zenginFon(stopaj: 0.175, netYillik: 49.5));
+      expect(f.stopajsiz, isFalse);
+      expect(f.netYillik, 49.5);
+    });
+
+    test('alanlar yoksa null kalır', () {
+      final f = Fon.jsondan(fonJson());
+      expect(f.netYillik, isNull);
+      expect(f.stopaj, isNull);
+      expect(f.stopajsiz, isFalse);
+      expect(f.istikrar, isNull);
+    });
+  });
+
+  group('İstikrar', () {
+    test('çözümlenir ve oran hesaplanır', () {
+      final f = Fon.jsondan(zenginFon());
+      expect(f.istikrar, (10, 12));
+      expect(f.istikrarOrani, closeTo(10 / 12, 1e-9));
+    });
+
+    test('bozuk biçim null döner', () {
+      expect(Fon.jsondan(zenginFon(istikrar: [5])).istikrar, isNull);
+    });
+
+    test('sıfır bölen null döner', () {
+      expect(Fon.jsondan(zenginFon(istikrar: [0, 0])).istikrar, isNull);
+    });
+  });
+
+  group('Ölçüt', () {
+    test('çözümlenir', () {
+      final o = Olcut.jsondan({
+        'para_piyasasi_brut': 46.9,
+        'para_piyasasi_net': 38.7,
+        'para_piyasasi_basit': 39.1,
+        'fon_sayisi': 71,
+        'stopaj_standart': 0.175,
+        'yogunluk_esigi': 51,
+      });
+      expect(o.gecerli, isTrue);
+      expect(o.net, 38.7);
+      // Bankaların yazdığı basit yıllık, bileşikten küçük olmalı
+      expect(o.basit! < o.brut!, isTrue);
+    });
+
+    test('net hesaplanamadıysa geçersiz', () {
+      expect(const Olcut().gecerli, isFalse);
+    });
+  });
+
+  group('Filtre gerekçeleri', () {
+    const olcut = Olcut(brut: 46.9, net: 38.7, basit: 39.1, fonSayisi: 71);
+
+    test('istikrarlı fon gerekçe alır', () {
+      final fonlar = [Fon.jsondan(zenginFon())];
+      final s = sec(fonlar, const Profil(risk: RiskToleransi.yuksek),
+          olcut: olcut);
+      expect(s.adaylar.first.gerekceler.any((g) => g.contains('12 ayın 10')),
+          isTrue);
+    });
+
+    test('istikrarsız fon o gerekçeyi almaz', () {
+      final fonlar = [Fon.jsondan(zenginFon(istikrar: [3, 12]))];
+      final s = sec(fonlar, const Profil(risk: RiskToleransi.yuksek),
+          olcut: olcut);
+      expect(s.adaylar.first.gerekceler.any((g) => g.contains('ayın')),
+          isFalse);
+    });
+
+    test('risksizi geçen fon gerekçe alır', () {
+      final fonlar = [Fon.jsondan(zenginFon())]; // net 96 vs ölçüt 38,7
+      final s = sec(fonlar, const Profil(risk: RiskToleransi.yuksek),
+          olcut: olcut);
+      expect(s.adaylar.first.gerekceler.any((g) => g.contains('risksiz')),
+          isTrue);
+    });
+
+    test('risksizin altında kalan fon o gerekçeyi almaz', () {
+      final fonlar = [Fon.jsondan(zenginFon(netYillik: 30.0))];
+      final s = sec(fonlar, const Profil(risk: RiskToleransi.yuksek),
+          olcut: olcut);
+      expect(s.adaylar.first.gerekceler.any((g) => g.contains('risksiz')),
+          isFalse);
+    });
+
+    test('stopajsız fon bunu gerekçe olarak söyler', () {
+      final fonlar = [Fon.jsondan(zenginFon())];
+      final s = sec(fonlar, const Profil(risk: RiskToleransi.yuksek),
+          olcut: olcut);
+      expect(s.adaylar.first.gerekceler.any((g) => g.contains('stopaj yok')),
+          isTrue);
+    });
+
+    test('ölçüt verilmezse çökmez', () {
+      final fonlar = [Fon.jsondan(zenginFon())];
+      final s = sec(fonlar, const Profil(risk: RiskToleransi.yuksek));
+      expect(s.adaylar, isNotEmpty);
     });
   });
 }

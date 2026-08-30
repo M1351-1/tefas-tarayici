@@ -26,6 +26,7 @@ import dagilim as _dag
 import istemci as _ist
 import kategoriler as _kat
 import metrikler as _met
+import olcut as _olcut
 import puanlama as _puan
 import uret as _uret
 import veritabani as _vt
@@ -167,6 +168,67 @@ def fiyatlari_cek(ist, depo, baslangic, bitis):
 
 # ---------------------------------------------------------------- hesaplama
 
+def olcut_ekle(fonlar, dagilimlar):
+    """Istikrar, stopaj, net getiri ve risk-ayarli getiriyi ekler.
+
+    Sirasi onemli: once stopaj ve net getiri, sonra olcut (net PPF
+    medyani), en son risk-ayarli getiri. Hepsi NET degerlerle yapiliyor
+    cunku kullaniciyi ilgilendiren cebine giren para.
+    """
+    yaz("Olculer hesaplaniyor...")
+
+    # 1) Aylik getiriler ve kategori medyanlari -> istikrar
+    for f in fonlar:
+        f["aylik_getiriler"] = _olcut.aylik_getiriler(f.pop("_seri", []))
+    medyanlar = _olcut.kategori_medyanlari(fonlar)
+    istikrarli = 0
+    for f in fonlar:
+        s = _olcut.istikrar(f, medyanlar)
+        f["istikrar"] = s
+        if s and s[1] >= 6 and s[0] / s[1] >= 0.6:
+            istikrarli += 1
+        f.pop("aylik_getiriler", None)
+    yaz("  istikrar: %d fon aylarin en az %%60'inda kategori medyaninin ustunde"
+        % istikrarli)
+
+    # 2) Stopaj - fon adina degil PORTFOYE bakarak
+    muaf = 0
+    for f in fonlar:
+        oran, gerekce, yerli = _olcut.stopaj_orani(dagilimlar.get(f["fon_kodu"]))
+        f["stopaj"] = oran
+        f["stopaj_gerekce"] = gerekce
+        f["yerli_hisse"] = yerli
+        f["net_yillik_getiri"] = _olcut.net_getiri(f.get("yillik_getiri"), oran)
+        if oran == 0.0:
+            muaf += 1
+    yaz("  stopaj: %d fon muaf (hisse yogun), %d fon stopajli"
+        % (muaf, len(fonlar) - muaf))
+
+    # 3) Olcut: para piyasasi fonlarinin NET medyan yillik getirisi
+    brut, adet = _olcut.para_piyasasi_olcutu(fonlar)
+    net_olcut = _olcut.net_getiri(brut, _olcut.STOPAJ_STANDART)
+    if net_olcut is None:
+        yaz("  UYARI: para piyasasi olcutu hesaplanamadi")
+    else:
+        yaz("  olcut: %d para piyasasi fonu, brut %%%.1f -> net %%%.1f "
+            "(basit yillik %%%.1f)"
+            % (adet, brut, net_olcut, _olcut.bilesikten_basite(brut)))
+
+    # 4) Risk-ayarli getiri (Sharpe), NET degerlerle
+    for f in fonlar:
+        f["risk_ayarli"] = _olcut.risk_ayarli(
+            f.get("net_yillik_getiri"), f.get("volatilite"), net_olcut)
+
+    return {
+        "para_piyasasi_brut": brut,
+        "para_piyasasi_net": net_olcut,
+        "para_piyasasi_basit": _olcut.bilesikten_basite(brut),
+        "fon_sayisi": adet,
+        "stopaj_standart": _olcut.STOPAJ_STANDART,
+        "yogunluk_esigi": _olcut.YOGUNLUK_ESIGI,
+    }
+
+
 def hesapla_ve_yaz(depo, ayarlar):
     yaz("Metrikler hesaplaniyor...")
     seriler = depo.tum_seriler()
@@ -178,6 +240,7 @@ def hesapla_ve_yaz(depo, ayarlar):
         kod = g["fon_kodu"]
         seri = seriler.get(kod) or []
         f = dict(g)
+        f["_seri"] = seri          # olcut_ekle aylik getiriler icin kullanip siler
         f.update(_met.hesapla(seri))
         ad, kaynak = _kat.kategori_belirle(kod, g.get("fon_adi"), kategori)
         f["kategori_ad"] = ad
@@ -195,6 +258,8 @@ def hesapla_ve_yaz(depo, ayarlar):
     if kategorisiz:
         yaz("  UYARI: %d fonun kategorisi belirlenemedi" % kategorisiz)
 
+    olcut_bilgisi = olcut_ekle(fonlar, depo.dagilim_haritasi())
+
     uygun, elenen = _puan.ele(fonlar, ayarlar)
     yaz("  %d fon uygun, %d fon elendi" % (len(uygun), len(elenen)))
 
@@ -204,7 +269,7 @@ def hesapla_ve_yaz(depo, ayarlar):
 
     veri_tarihi = depo.en_son_tarih()
     boyut = _uret.ozet_yaz(JSON_YOLU, puanlanan, puanlanmayan, elenen,
-                           ayarlar, veri_tarihi)
+                           ayarlar, veri_tarihi, olcut_bilgisi)
     yaz("  fonlar.json yazildi: %.2f MB" % (boyut / 1024 / 1024))
 
     kodlar = [f["fon_kodu"] for f in puanlanan + puanlanmayan]

@@ -62,6 +62,17 @@ def fon_kaydi(f):
         },
         "volatilite": _yuvarla(f.get("volatilite"), 2),
         "maks_dusus": _yuvarla(f.get("maks_dusus"), 2),
+        # Stopaj sonrasi yillik getiri - kullanicinin cebine giren.
+        # Stopaj kazanc uzerinden satista kesildigi icin sadece yillik
+        # getiriye uygulaniyor, gunluk/haftalik fiyat hareketine degil.
+        "net_yillik": _yuvarla(f.get("net_yillik_getiri"), 2),
+        "stopaj": f.get("stopaj"),
+        "stopaj_gerekce": f.get("stopaj_gerekce"),
+        "yerli_hisse": _yuvarla(f.get("yerli_hisse"), 1),
+        # (net yillik - net olcut) / oynaklik. Sharpe orani.
+        "risk_ayarli": _yuvarla(f.get("risk_ayarli"), 3),
+        # (kategori medyaninin ustunde kalinan ay, degerlendirilen ay)
+        "istikrar": list(f["istikrar"]) if f.get("istikrar") else None,
         "puan": f.get("puan"),
         "sira": f.get("kategori_sirasi"),
         "kategori_fon_sayisi": f.get("kategori_fon_sayisi"),
@@ -70,7 +81,8 @@ def fon_kaydi(f):
     }
 
 
-def ozet_yaz(yol, puanlanan, puanlanmayan, elenen, ayarlar, veri_tarihi):
+def ozet_yaz(yol, puanlanan, puanlanmayan, elenen, ayarlar, veri_tarihi,
+             olcut=None):
     """data/fonlar.json dosyasini yazar, boyutu (bayt) dondurur."""
     yol = Path(yol)
     yol.parent.mkdir(parents=True, exist_ok=True)
@@ -119,6 +131,12 @@ def ozet_yaz(yol, puanlanan, puanlanmayan, elenen, ayarlar, veri_tarihi):
             "asgari_kategori_fon_sayisi": ayarlar["asgari_kategori_fon_sayisi"],
             "z_kirpma": ayarlar["z_kirpma"],
         },
+        # Para piyasasi olcutu: "risksiz alternatif ne verdi".
+        # brut/net/basit ucu birden veriliyor cunku bankalarin ekranda
+        # yazdigi BASIT yillik, TEFAS fiyatindan olculense BILESIK, ve
+        # yatirimcinin cebine giren NET. Uygulama hangisini gosterdigini
+        # soylemezse kullanici hakli olarak "abartiyorsun" der.
+        "olcut": olcut,
         "sayilar": {
             "puanlanan": len(puanlanan),
             "puanlanmayan": len(puanlanmayan),

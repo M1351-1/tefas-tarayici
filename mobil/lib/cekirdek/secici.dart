@@ -211,7 +211,11 @@ class SecimSonucu {
 }
 
 /// Ana giriş noktası.
-SecimSonucu sec(List<Fon> fonlar, Profil profil, {int adet = 10}) {
+///
+/// [olcut] verilirse gerekçelere "risksiz alternatifi şu kadar geçmiş"
+/// satırı eklenir.
+SecimSonucu sec(List<Fon> fonlar, Profil profil,
+    {int adet = 10, Olcut? olcut}) {
   final tavan = profil.risk.oynaklikTavani;
   final taban = profil.risk.dususTabani;
 
@@ -266,7 +270,7 @@ SecimSonucu sec(List<Fon> fonlar, Profil profil, {int adet = 10}) {
       fon: f,
       puan: puanli[i].puan,
       sira: i + 1,
-      gerekceler: _gerekceler(f, agirliklar),
+      gerekceler: _gerekceler(f, agirliklar, olcut),
       uyarilar: _uyarilar(f),
     ));
   }
@@ -285,8 +289,34 @@ SecimSonucu sec(List<Fon> fonlar, Profil profil, {int adet = 10}) {
 }
 
 /// Fonun listeye neden girdiğini Türkçe anlatır.
-List<String> _gerekceler(Fon f, Map<String, double> agirliklar) {
+List<String> _gerekceler(Fon f, Map<String, double> agirliklar, Olcut? olcut) {
   final liste = <String>[];
+
+  // İstikrar en güçlü gerekçe: getiri sıralamasının ayırt edemediği
+  // şeyi ayırt eder, o yüzden başa koyuyoruz.
+  final ist = f.istikrar;
+  if (ist != null && ist.$2 >= 6) {
+    final oran = ist.$1 / ist.$2;
+    if (oran >= 0.6) {
+      // Çift tırnak: metinde kesme işareti var ("10'unda"), tek tırnaklı
+      // Dart dizgesinde kaçırmak gerekirdi.
+      liste.add("son ${ist.$2} ayın ${ist.$1}'inde kategori medyanının "
+          "üstünde kaldı");
+    }
+  }
+
+  // Risksiz alternatifle kıyas — stopaj sonrası, cebe giren üzerinden.
+  final net = f.netYillik;
+  if (olcut != null && olcut.gecerli && net != null) {
+    final fark = net - olcut.net!;
+    if (fark > 2) {
+      liste.add('risksiz alternatifi ${fark.toStringAsFixed(0)} puan geçmiş '
+          '(stopaj sonrası)');
+    }
+  }
+  if (f.stopajsiz) {
+    liste.add('hisse yoğun fon: stopaj yok, brüt getirisi cebinize giriyor');
+  }
   final k = katkilar(f, agirliklar);
   for (final e in k.take(2)) {
     if (e.katki <= 0.05) continue;

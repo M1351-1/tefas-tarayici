@@ -30,7 +30,7 @@ class _SeciciSayfasiDurumu extends State<SeciciSayfasi> {
     final durum = Kapsam.of(context);
     final veri = durum.veri;
     if (veri == null) return;
-    setState(() => _sonuc = sec(veri.fonlar, _profil));
+    setState(() => _sonuc = sec(veri.fonlar, _profil, olcut: veri.olcut));
   }
 
   @override
@@ -363,6 +363,11 @@ class _AdayKarti extends StatelessWidget {
                   _Etiket(
                       metin: 'oynaklık %'
                           '${(f.volatilite ?? 0).toStringAsFixed(0)}'),
+                  if (f.netYillik != null)
+                    _Etiket(metin: 'net yıllık ${trYuzde(f.netYillik)}'),
+                  if (f.istikrar != null)
+                    _Etiket(
+                        metin: 'istikrar ${f.istikrar!.$1}/${f.istikrar!.$2}'),
                 ],
               ),
               const SizedBox(height: 10),

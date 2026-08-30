@@ -90,6 +90,28 @@ class Fon {
   final Getiri getiri;
   final double? volatilite;
   final double? maksDusus;
+
+  /// Stopaj sonrası yıllık getiri — cebinize giren.
+  ///
+  /// Sadece yıllık getiriye uygulanır: stopaj kazanç üzerinden satışta
+  /// kesilir, günlük fiyat hareketine uygulanmaz.
+  final double? netYillik;
+
+  /// 0,0 (hisse yoğun, muaf) veya 0,175.
+  final double? stopaj;
+
+  /// Neden muaf / neden değil — kullanıcıya gösterilir.
+  final String? stopajGerekce;
+
+  /// Portföyündeki yerli hisse yüzdesi. Muafiyet buna bakar; fon adına değil.
+  final double? yerliHisse;
+
+  /// (net yıllık − net ölçüt) / oynaklık. Sharpe oranı.
+  final double? riskAyarli;
+
+  /// Kategori medyanının üstünde kalınan ay / değerlendirilen ay.
+  final (int, int)? istikrar;
+
   final double? puan;
   final int? sira;
   final int? kategoriFonSayisi;
@@ -112,6 +134,12 @@ class Fon {
     this.gozlem,
     this.volatilite,
     this.maksDusus,
+    this.netYillik,
+    this.stopaj,
+    this.stopajGerekce,
+    this.yerliHisse,
+    this.riskAyarli,
+    this.istikrar,
     this.puan,
     this.sira,
     this.kategoriFonSayisi,
@@ -149,6 +177,14 @@ class Fon {
     return liste;
   }
 
+  /// [ustunde, toplam] listesini kayda çevirir.
+  static (int, int)? _istikrarCoz(dynamic v) {
+    if (v is! List || v.length < 2) return null;
+    final a = v[0], b = v[1];
+    if (a is! num || b is! num || b == 0) return null;
+    return (a.toInt(), b.toInt());
+  }
+
   factory Fon.jsondan(Map<String, dynamic> j) {
     final ham = _harita(j['kirilim']);
     return Fon(
@@ -167,6 +203,12 @@ class Fon {
       getiri: Getiri.jsondan(_harita(j['getiri']) ?? const {}),
       volatilite: (j['volatilite'] as num?)?.toDouble(),
       maksDusus: (j['maks_dusus'] as num?)?.toDouble(),
+      netYillik: (j['net_yillik'] as num?)?.toDouble(),
+      stopaj: (j['stopaj'] as num?)?.toDouble(),
+      stopajGerekce: j['stopaj_gerekce'] as String?,
+      yerliHisse: (j['yerli_hisse'] as num?)?.toDouble(),
+      riskAyarli: (j['risk_ayarli'] as num?)?.toDouble(),
+      istikrar: _istikrarCoz(j['istikrar']),
       puan: (j['puan'] as num?)?.toDouble(),
       sira: (j['sira'] as num?)?.toInt(),
       kategoriFonSayisi: (j['kategori_fon_sayisi'] as num?)?.toInt(),
@@ -176,6 +218,16 @@ class Fon {
   }
 
   bool get puanlandi => puan != null;
+
+  /// Stopajdan muaf mı (hisse senedi yoğun fon)?
+  bool get stopajsiz => stopaj != null && stopaj == 0.0;
+
+  /// İstikrar oranı 0–1 arası. Veri yoksa null.
+  double? get istikrarOrani {
+    final i = istikrar;
+    if (i == null || i.$2 == 0) return null;
+    return i.$1 / i.$2;
+  }
 
   /// Fon adının başındaki kurucu şirket. "AK PORTFÖY AMERİKA ..." -> "AK PORTFÖY"
   ///
@@ -187,6 +239,45 @@ class Fon {
     final parcalar = ad.split(' ');
     return parcalar.take(2).join(' ');
   }
+}
+
+
+/// Para piyasası ölçütü — "risksiz alternatif ne verdi".
+///
+/// Üç sayı birden tutuluyor çünkü aynı fon için üç farklı doğru rakam var
+/// ve hangisini gösterdiğimizi söylemezsek kullanıcı haklı olarak
+/// "abartıyorsun" der:
+///
+///   brüt bileşik  TEFAS fiyatından ölçülen (bizim hesabımız)
+///   brüt basit    bankaların ekranda yazdığı (aylık × 12)
+///   net           stopaj sonrası, cebe giren
+class Olcut {
+  final double? brut;
+  final double? net;
+  final double? basit;
+  final int fonSayisi;
+  final double stopajStandart;
+  final double yogunlukEsigi;
+
+  const Olcut({
+    this.brut,
+    this.net,
+    this.basit,
+    this.fonSayisi = 0,
+    this.stopajStandart = 0.175,
+    this.yogunlukEsigi = 51,
+  });
+
+  factory Olcut.jsondan(Map<String, dynamic> j) => Olcut(
+        brut: (j['para_piyasasi_brut'] as num?)?.toDouble(),
+        net: (j['para_piyasasi_net'] as num?)?.toDouble(),
+        basit: (j['para_piyasasi_basit'] as num?)?.toDouble(),
+        fonSayisi: (j['fon_sayisi'] as num?)?.toInt() ?? 0,
+        stopajStandart: (j['stopaj_standart'] as num?)?.toDouble() ?? 0.175,
+        yogunlukEsigi: (j['yogunluk_esigi'] as num?)?.toDouble() ?? 51,
+      );
+
+  bool get gecerli => net != null;
 }
 
 class KategoriOzeti {
@@ -237,6 +328,9 @@ class Veri {
   final List<KategoriOzeti> kategoriler;
   final List<Fon> fonlar;
 
+  /// Para piyasası ölçütü. Hesaplanamadıysa null.
+  final Olcut? olcut;
+
   /// Bu veri ağdan mı geldi, önbellekten mi? Kullanıcıya söylemek için.
   final bool onbellekten;
 
@@ -248,6 +342,7 @@ class Veri {
     required this.agirliklar,
     required this.kategoriler,
     required this.fonlar,
+    this.olcut,
     this.onbellekten = false,
   });
 
@@ -266,6 +361,10 @@ class Veri {
       fonlar: ((j['fonlar'] as List?) ?? [])
           .map((e) => Fon.jsondan(e as Map<String, dynamic>))
           .toList(),
+      olcut: j['olcut'] is Map
+          ? Olcut.jsondan((j['olcut'] as Map)
+              .map((k, v) => MapEntry(k.toString(), v)))
+          : null,
       onbellekten: onbellekten,
     );
   }
@@ -278,6 +377,7 @@ class Veri {
         agirliklar: agirliklar,
         kategoriler: kategoriler,
         fonlar: fonlar,
+        olcut: olcut,
         onbellekten: true,
       );
 }

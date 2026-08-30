@@ -209,6 +209,10 @@ class _DetaySayfasiDurumu extends State<DetaySayfasi> {
           ),
           const SizedBox(height: 12),
 
+          // ------------------------------ cebe giren / ölçüt / istikrar
+          _Olculer(fon: f, olcut: durum.veri?.olcut),
+          const SizedBox(height: 12),
+
           // ------------------------------------------- varlık dağılımı
           if (_gecmis != null && _gecmis!.dagilim.isNotEmpty) ...[
             _Bolum(
@@ -437,6 +441,144 @@ class _KatkiCubugu extends StatelessWidget {
         const SizedBox(height: 3),
         Text(
           'Bu fon: ${trSayi(deger)} · kategori ortalaması: ${trSayi(ortalama)}',
+          style: tema.textTheme.bodySmall?.copyWith(fontSize: 11),
+        ),
+      ],
+    );
+  }
+}
+
+/// Cebe giren getiri, risksiz alternatifle kıyas ve istikrar.
+///
+/// Bu bölüm bilinçli olarak brüt/net ayrımını yüzüne söylüyor. TEFAS
+/// fiyatları stopaj kesilmeden öncesidir; hisse yoğun fonlarda stopaj
+/// yok, para piyasası fonlarında %17,5 var. Brüt karşılaştırma hisse
+/// fonlarını haksız yere geride gösterir.
+class _Olculer extends StatelessWidget {
+  final Fon fon;
+  final Olcut? olcut;
+
+  const _Olculer({required this.fon, required this.olcut});
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    final brut = fon.getiri.yillik;
+    final net = fon.netYillik;
+    final o = olcut;
+
+    return _Bolum(
+      baslik: 'Cebinize giren',
+      cocuk: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Satir('Yıllık getiri (brüt)', trYuzde(brut),
+              renkli: true, deger: brut,
+              aciklama: 'TEFAS fiyatından ölçülen. Fon işletme gideri '
+                  'zaten düşülmüş, stopaj düşülmemiş.'),
+          _Satir('Stopaj', fon.stopaj == null
+                  ? '—'
+                  : (fon.stopajsiz ? 'yok' : '%${trSayi(fon.stopaj! * 100, ondalik: 1)}'),
+              aciklama: fon.stopajGerekce),
+          _Satir('Cebinize giren (yıllık)', trYuzde(net),
+              renkli: true, deger: net),
+
+          if (o != null && o.gecerli) ...[
+            const Divider(height: 22),
+            Text('Risksiz alternatifle kıyas',
+                style: tema.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            _Satir('Para piyasası fonları (net)', trYuzde(o.net),
+                aciklama: '${o.fonSayisi} fonun medyanı. Bankaların ekranda '
+                    'yazdığı basit yıllık karşılığı '
+                    '%${trSayi(o.basit ?? 0)}.'),
+            if (net != null && o.net != null)
+              _Satir(
+                'Fark',
+                '${net - o.net! >= 0 ? "+" : ""}'
+                    '${trSayi(net - o.net!)} puan',
+                renkli: true,
+                deger: net - o.net!,
+                aciklama: net - o.net! >= 0
+                    ? 'Aldığı riskin karşılığını risksiz alternatifin '
+                        'üstünde vermiş.'
+                    : 'Risk almasına rağmen risksiz alternatifin altında '
+                        'kalmış.',
+              ),
+            if (fon.riskAyarli != null)
+              _Satir('Birim risk başına', trSayi(fon.riskAyarli!),
+                  aciklama: 'Risksizin üstüne koyduğu getirinin '
+                      'oynaklığa oranı (Sharpe). Yüksek olması iyi.'),
+          ],
+
+          if (fon.istikrar != null) ...[
+            const Divider(height: 22),
+            _IstikrarCubugu(istikrar: fon.istikrar!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// "Son N ayın kaçında kategori medyanının üstünde kaldı?"
+///
+/// Getiri sıralamasının ayırt edemediği şeyi ayırt eder: tek seferlik
+/// sıçrama yapan fonla istikrarlı fonun yıllık getirisi aynı olabilir
+/// ama biri 3/12, diğeri 10/12 çıkar.
+class _IstikrarCubugu extends StatelessWidget {
+  final (int, int) istikrar;
+
+  const _IstikrarCubugu({required this.istikrar});
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    final (ustunde, toplam) = istikrar;
+    final oran = ustunde / toplam;
+    final renk = oran >= 0.6
+        ? Colors.green.shade600
+        : (oran >= 0.4 ? Colors.orange.shade700 : Colors.red.shade600);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('İstikrar',
+                style: tema.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            Text('$ustunde / $toplam ay',
+                style: tema.textTheme.bodyMedium
+                    ?.copyWith(color: renk, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (var i = 0; i < toplam; i++) ...[
+              Expanded(
+                child: Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: i < ustunde
+                        ? renk
+                        : tema.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              if (i < toplam - 1) const SizedBox(width: 3),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Son $toplam ayın $ustunde tanesinde kendi kategorisinin '
+          'medyanının üstünde kaldı. Tek seferlik sıçrama yapan fonlar '
+          'burada düşük çıkar.',
           style: tema.textTheme.bodySmall?.copyWith(fontSize: 11),
         ),
       ],
