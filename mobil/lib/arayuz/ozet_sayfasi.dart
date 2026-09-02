@@ -30,6 +30,10 @@ class OzetSayfasi extends StatelessWidget {
           const VeriTarihiRozeti(),
           const SizedBox(height: 16),
           _SayilarKarti(veri: veri),
+          if (veri.ongoruGucu != null) ...[
+            const SizedBox(height: 16),
+            OngoruGucuKarti(guc: veri.ongoruGucu!),
+          ],
           const SizedBox(height: 20),
           _UclerBolumu(
             baslik: 'Bugün en çok yükselen 10 fon',
@@ -46,6 +50,68 @@ class OzetSayfasi extends StatelessWidget {
           ),
           const SorumlulukNotu(),
         ],
+      ),
+    );
+  }
+}
+
+/// Sıralamanın ÖLÇÜLMÜŞ öngörü gücü.
+///
+/// NEDEN EN ÜSTTE: uygulama fonları puanlayıp "kategori sırası 1" diye
+/// gösteriyor ve bu bir iddia. İddia toplayıcıda ileri yürüyüşle sınandı
+/// ve geçmiş getiriye göre sıralamanın geleceği tutmadığı çıktı. Bunu
+/// söylememek, kullanıcının sıralamayı bir tavsiye sanmasına yol açar.
+///
+/// Ölçüm HER TOPLAMADA yeniden yapılıyor; burada sabit bir metin yok.
+class OngoruGucuKarti extends StatelessWidget {
+  final OngoruGucu guc;
+  const OngoruGucuKarti({super.key, required this.guc});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!guc.olculdu) return const SizedBox.shrink();
+    final tema = Theme.of(context);
+    final calisiyor = guc.calisiyor;
+    final renk = calisiyor ? Colors.green.shade700 : Colors.orange.shade800;
+
+    return Card(
+      color: renk.withValues(alpha: 0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: renk.withValues(alpha: 0.4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(calisiyor ? Icons.verified : Icons.science_outlined,
+                    size: 18, color: renk),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Sıralama geleceği tutuyor mu?',
+                    style: tema.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold, color: renk),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(guc.ozet, style: tema.textTheme.bodySmall?.copyWith(
+                height: 1.45)),
+            const SizedBox(height: 8),
+            Text(
+              'Bu ölçüm her veri toplamada yeniden yapılır. Sıralamayı bir '
+              'tavsiye değil, geçmişin tasviri olarak okuyun.',
+              style: tema.textTheme.bodySmall?.copyWith(
+                  color: tema.colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
       ),
     );
   }

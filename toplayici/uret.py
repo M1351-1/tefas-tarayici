@@ -73,8 +73,20 @@ def fon_kaydi(f):
         "risk_ayarli": _yuvarla(f.get("risk_ayarli"), 3),
         # (kategori medyaninin ustunde kalinan ay, degerlendirilen ay)
         "istikrar": list(f["istikrar"]) if f.get("istikrar") else None,
+        # IKI EKSEN. `puan`/`sira` geriye uyumluluk icin GETIRI eksenine
+        # esitlenir; bunlar "kalite puani" DEGILDIR.
         "puan": f.get("puan"),
         "sira": f.get("kategori_sirasi"),
+        # GETIRI EKSENI: gecmisin tasviri. Olculdu, ileri Spearman ~0,05
+        # — yani gelecege dair bir iddia tasimaz.
+        "getiri_puani": f.get("getiri_puani"),
+        "getiri_sirasi": f.get("getiri_sirasi"),
+        # RISK EKSENI: akranlarina gore ne kadar sakin. Volatilite (0,76)
+        # ve maksimum dusus (0,57) KALICI oldugu icin bu eksen gelecege
+        # dair gercek bilgi tasir. Yuksek = daha sakin. Bir YARGI degil
+        # PROFIL: hisse fonunda dusuk oynaklik, isini yapmamasi olabilir.
+        "risk_puani": f.get("risk_puani"),
+        "risk_sirasi": f.get("risk_sirasi"),
         "kategori_fon_sayisi": f.get("kategori_fon_sayisi"),
         "kirilim": f.get("puan_kirilimi"),
         "puanlanmama_nedeni": f.get("puanlanmama_nedeni"),
@@ -82,7 +94,7 @@ def fon_kaydi(f):
 
 
 def ozet_yaz(yol, puanlanan, puanlanmayan, elenen, ayarlar, veri_tarihi,
-             olcut=None):
+             olcut=None, ongoru_gucu=None):
     """data/fonlar.json dosyasini yazar, boyutu (bayt) dondurur."""
     yol = Path(yol)
     yol.parent.mkdir(parents=True, exist_ok=True)
@@ -137,6 +149,17 @@ def ozet_yaz(yol, puanlanan, puanlanmayan, elenen, ayarlar, veri_tarihi,
         # yatirimcinin cebine giren NET. Uygulama hangisini gosterdigini
         # soylemezse kullanici hakli olarak "abartiyorsun" der.
         "olcut": olcut,
+        # ONGORU GUCU: siralamanin gelecegi tutup tutmadigi OLCULDU.
+        #
+        # Uygulama "kategori sirasi 1" diye gosterirken bir IDDIA'da
+        # bulunuyor. Iddia sinandi ve gecmis getiriye gore siralamanin
+        # gelecegi tutmadigi cikti (Spearman ~0,05; ust %20 dilim ile alt
+        # %20 dilimin uc aylik getirisi ayni). Oynaklik ise guclu bicimde
+        # kalici (Spearman ~0,76).
+        #
+        # Bu sayilar HER TOPLAMADA yeniden olculuyor; sabit gomulmuyor ki
+        # piyasa degisirse olcum de degissin.
+        "ongoru_gucu": ongoru_gucu,
         "sayilar": {
             "puanlanan": len(puanlanan),
             "puanlanmayan": len(puanlanmayan),

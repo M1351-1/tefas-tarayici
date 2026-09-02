@@ -92,8 +92,14 @@ def test_kirilim_toplami_puana_esit():
         assert abs(toplam - f["puan"]) < 1e-3
 
 
-def test_dusuk_volatilite_puan_kazandirir():
-    # Iki fon her seyde ayni, sadece volatilite farkli.
+def test_dusuk_volatilite_RISK_puanini_artirir():
+    """Volatilite artik RISK ekseninde, getiri ekseninde degil.
+
+    Ayirmanin sebebi olculdu: gecmis getirinin ileri Spearman'i ~0,05
+    (yani gelecegi tutmuyor), volatilitenin 0,76 (kalici). Ikisini tek
+    puanda toplamak, tutmayan bileseni tutan bilesenle harmanlayip
+    ikisini de bulaniklastiriyordu.
+    """
     fonlar = grup(10)
     for f in fonlar:
         f["aylik_getiri"] = 10.0
@@ -102,8 +108,43 @@ def test_dusuk_volatilite_puan_kazandirir():
     fonlar[0]["volatilite"] = 5.0    # en sakin
     fonlar[-1]["volatilite"] = 90.0  # en oynak
     puanlanan, _ = p.puanla(fonlar, AYAR)
-    puan = {f["fon_kodu"]: f["puan"] for f in puanlanan}
-    assert puan["F00"] > puan["F09"]
+    risk = {f["fon_kodu"]: f["risk_puani"] for f in puanlanan}
+    assert risk["F00"] > risk["F09"], "sakin fon daha yuksek risk puani almali"
+
+
+def test_volatilite_GETIRI_puanini_ETKILEMEZ():
+    """ASIL SINAV: iki eksen gercekten ayri mi?
+
+    Getirileri ayni, yalnizca volatiliteleri farkli iki fonun GETIRI
+    puani ESIT olmali. Esit degilse eksenler hala karisiyor demektir.
+    """
+    fonlar = grup(10)
+    for f in fonlar:
+        f["aylik_getiri"] = 10.0
+        f["uc_aylik_getiri"] = 30.0
+        f["haftalik_getiri"] = 2.0
+    fonlar[0]["volatilite"] = 5.0
+    fonlar[-1]["volatilite"] = 90.0
+    puanlanan, _ = p.puanla(fonlar, AYAR)
+    getiri = {f["fon_kodu"]: f["getiri_puani"] for f in puanlanan}
+    assert abs(getiri["F00"] - getiri["F09"]) < 1e-9
+
+
+def test_iki_eksen_ayri_sira_uretir():
+    fonlar = grup(10)
+    for i, f in enumerate(fonlar):
+        # Getiri artan, volatilite de artan: siralamalar TERS olmali.
+        f["aylik_getiri"] = 10.0 + i
+        f["uc_aylik_getiri"] = 30.0 + i
+        f["haftalik_getiri"] = 2.0 + i * 0.1
+        f["volatilite"] = 10.0 + i * 5
+    puanlanan, _ = p.puanla(fonlar, AYAR)
+    d = {f["fon_kodu"]: f for f in puanlanan}
+    # En yuksek getirili fon getiri sirasinda 1.
+    assert d["F09"]["getiri_sirasi"] == 1
+    # Ama en oynak oldugu icin risk sirasinda SONUNCU.
+    assert d["F09"]["risk_sirasi"] == 10
+    assert d["F00"]["risk_sirasi"] == 1
 
 
 def test_yuksek_aylik_getiri_puan_kazandirir():

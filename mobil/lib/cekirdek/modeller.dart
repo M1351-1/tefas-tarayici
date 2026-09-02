@@ -112,8 +112,28 @@ class Fon {
   /// Kategori medyanının üstünde kalınan ay / değerlendirilen ay.
   final (int, int)? istikrar;
 
+  /// GERIYE UYUMLULUK: getiri eksenine esittir.
+  /// Bu bir "kalite puani" DEGILDIR; yeni kod getiriPuani kullanmali.
   final double? puan;
   final int? sira;
+
+  /// GETIRI EKSENI — gecmisin TASVIRI.
+  ///
+  /// Olculdu: gecmis getiriye gore siralamanin ileri Spearman'i ~0,05 ve
+  /// ust %20 dilim ile alt %20 dilimin uc aylik getirisi ayni. Yani bu
+  /// eksen gelecege dair bir iddia TASIMAZ.
+  final double? getiriPuani;
+  final int? getiriSirasi;
+
+  /// RISK EKSENI — akranlarina gore ne kadar sakin. Yuksek = sakin.
+  ///
+  /// Olculdu: volatilite (Spearman 0,76) ve maksimum dusus (0,57) KALICI.
+  /// Yani bu eksen gelecege dair GERCEK bilgi tasir.
+  ///
+  /// Bir YARGI degil PROFIL: hisse fonunda dusuk oynaklik, fonun isini
+  /// yapmamasi da olabilir.
+  final double? riskPuani;
+  final int? riskSirasi;
   final int? kategoriFonSayisi;
   final List<Kirilim> kirilim;
   final String? puanlanmamaNedeni;
@@ -142,6 +162,10 @@ class Fon {
     this.istikrar,
     this.puan,
     this.sira,
+    this.getiriPuani,
+    this.getiriSirasi,
+    this.riskPuani,
+    this.riskSirasi,
     this.kategoriFonSayisi,
     this.kirilim = const [],
     this.puanlanmamaNedeni,
@@ -211,6 +235,10 @@ class Fon {
       istikrar: _istikrarCoz(j['istikrar']),
       puan: (j['puan'] as num?)?.toDouble(),
       sira: (j['sira'] as num?)?.toInt(),
+      getiriPuani: (j['getiri_puani'] as num?)?.toDouble(),
+      getiriSirasi: (j['getiri_sirasi'] as num?)?.toInt(),
+      riskPuani: (j['risk_puani'] as num?)?.toDouble(),
+      riskSirasi: (j['risk_sirasi'] as num?)?.toInt(),
       kategoriFonSayisi: (j['kategori_fon_sayisi'] as num?)?.toInt(),
       kirilim: _kirilimCoz(ham),
       puanlanmamaNedeni: j['puanlanmama_nedeni'] as String?,
@@ -318,6 +346,31 @@ class KategoriOzeti {
   String get anahtar => '$tip|$ad';
 }
 
+/// Sıralamanın ÖNGÖRÜ GÜCÜ — ölçüldü, varsayılmadı.
+///
+/// Uygulama "kategori sırası 1" derken bir iddiada bulunuyor: bu fon
+/// diğerlerinden iyi. İddia toplayıcıda ileri yürüyüşle sınanıyor: her T
+/// anında fonlar geçmiş getiriye göre sıralanıp T+ufuk arasındaki GERÇEK
+/// sonuçlarına bakılıyor.
+///
+/// Ölçüm sonucu (2488 fon): geçmiş getiriye göre sıralama geleceği
+/// tutmuyor — üst %20 dilim ile alt %20 dilimin üç aylık getirisi aynı.
+/// Buna karşılık OYNAKLIK güçlü biçimde kalıcı (sıra korelasyonu ~0,76).
+class OngoruGucu {
+  final String durum; // "calisiyor" | "calismiyor" | "olculemedi"
+  final String ozet;
+
+  const OngoruGucu({required this.durum, required this.ozet});
+
+  bool get calisiyor => durum == 'calisiyor';
+  bool get olculdu => durum != 'olculemedi';
+
+  factory OngoruGucu.jsondan(Map<String, dynamic> j) => OngoruGucu(
+        durum: (j['durum'] as String?) ?? 'olculemedi',
+        ozet: (j['ozet'] as String?) ?? '',
+      );
+}
+
 /// Tüm veri dosyası.
 class Veri {
   final int surum;
@@ -331,6 +384,9 @@ class Veri {
   /// Para piyasası ölçütü. Hesaplanamadıysa null.
   final Olcut? olcut;
 
+  /// Sıralamanın ölçülmüş öngörü gücü. Ölçülemediyse null.
+  final OngoruGucu? ongoruGucu;
+
   /// Bu veri ağdan mı geldi, önbellekten mi? Kullanıcıya söylemek için.
   final bool onbellekten;
 
@@ -343,6 +399,7 @@ class Veri {
     required this.kategoriler,
     required this.fonlar,
     this.olcut,
+    this.ongoruGucu,
     this.onbellekten = false,
   });
 
@@ -365,6 +422,10 @@ class Veri {
           ? Olcut.jsondan((j['olcut'] as Map)
               .map((k, v) => MapEntry(k.toString(), v)))
           : null,
+      ongoruGucu: j['ongoru_gucu'] is Map
+          ? OngoruGucu.jsondan((j['ongoru_gucu'] as Map)
+              .map((k, v) => MapEntry(k.toString(), v)))
+          : null,
       onbellekten: onbellekten,
     );
   }
@@ -378,6 +439,7 @@ class Veri {
         kategoriler: kategoriler,
         fonlar: fonlar,
         olcut: olcut,
+        ongoruGucu: ongoruGucu,
         onbellekten: true,
       );
 }

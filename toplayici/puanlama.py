@@ -19,13 +19,48 @@ from __future__ import annotations
 
 import math
 
+# IKI AYRI EKSEN — TEK PUAN DEGIL.
+#
+# NEDEN AYRILDI (olculdu, varsayilmadi):
+#
+#   bilesen            ileri Spearman
+#   aylik getiri            0,07
+#   uc aylik getiri         0,05
+#   haftalik getiri         0,07
+#   volatilite              0,76   <-- KALICI
+#   maksimum dusus          0,57   <-- KALICI
+#
+# Ust %20 dilimin uc aylik ileri getirisi %8,8, alt %20 dilimin %9,6.
+# Yani gecmis getiriye gore siralama gelecegi TUTMUYOR. Oysa oynaklik ve
+# dusus guclu bicimde kaliciydi.
+#
+# Ikisini tek bir "puan"da toplamak, tutmayan bir bileseni tutan bir
+# bilesenle harmanlayip ikisini de bulaniklastiriyordu. Ayrica tek puan
+# "bu fon iyi" gibi okunuyordu; oysa elde iki AYRI bilgi var:
+#
+#   GETIRI EKSENI : gecmiste ne oldu. TASVIR. Ongoru iddiasi YOK.
+#   RISK EKSENI   : bu fon akranlarina gore ne kadar sakin. KALICI,
+#                   yani gelecege dair gercek bir ifade.
+#
+# Risk ekseni "daha iyi" demek DEGILDIR: hisse fonunda dusuk oynaklik,
+# fonun isini yapmamasi da olabilir. Bir PROFIL bildirir, bir yargi degil.
+
+GETIRI_BILESENLERI = ("aylik_getiri", "uc_aylik_getiri", "haftalik_getiri")
+RISK_BILESENLERI = ("volatilite", "maks_dusus")
+
+# Getiri ekseni agirliklari ayarlar.json'dan gelir ve kendi icinde
+# yeniden normalize edilir (eski toplam 0,80 idi).
+# Risk ekseni agirliklari OLCULEN kaliciliga gore: volatilite (0,76)
+# dususten (0,57) daha guvenilir bir sinyal.
+RISK_AGIRLIKLARI = {"volatilite": 0.6, "maks_dusus": 0.4}
+
 # Puanlanabilmesi icin gereken metrikler. Biri eksikse fon puanlanmaz -
 # eksik metrigi sifir saymak, kotu performansi orta performans gibi
 # gosterirdi.
-GEREKLI = ("aylik_getiri", "uc_aylik_getiri", "haftalik_getiri", "volatilite")
+GEREKLI = GETIRI_BILESENLERI + ("volatilite",)
 
-# Volatilite tek "az iyidir" metrigi: z-skoru ters isaretle girer.
-TERS = {"volatilite"}
+# Risk ekseninde AZ olan "daha sakin"dir: z-skoru ters isaretle girer.
+TERS = {"volatilite", "maks_dusus"}
 
 
 def _ortalama_ve_sapma(degerler):
@@ -113,46 +148,93 @@ def puanla(fonlar, ayarlar):
                 puanlanmayan.append(g)
             continue
 
+        # Her eksen KENDI istatistigiyle olculur.
         istatistik = {}
-        for metrik in GEREKLI:
-            degerler = [f[metrik] for f in grup]
-            istatistik[metrik] = _ortalama_ve_sapma(degerler)
+        for metrik in set(GETIRI_BILESENLERI) | set(RISK_BILESENLERI):
+            degerler = [f[metrik] for f in grup if f.get(metrik) is not None]
+            if len(degerler) >= 2:
+                istatistik[metrik] = _ortalama_ve_sapma(degerler)
+
+        # Getiri ekseni agirliklari kendi icinde normalize edilir:
+        # ayarlar.json'daki agirliklarin toplami 0,80 idi (kalan 0,20
+        # volatiliteye gidiyordu ve o artik ayri eksende).
+        getiri_toplam = sum(agirliklar.get(m, 0) for m in GETIRI_BILESENLERI)
 
         for f in grup:
             g = dict(f)
-            kirilim = {}
-            toplam = 0.0
-            for metrik in GEREKLI:
-                ort, sapma = istatistik[metrik]
-                z = _z(f[metrik], ort, sapma, kirpma)
-                if metrik in TERS:
-                    z = -z
-                agirlik = agirliklar[metrik]
-                katki = agirlik * z
-                toplam += katki
-                kirilim[metrik] = {
-                    "deger": round(f[metrik], 4),
-                    "kategori_ortalamasi": round(ort, 4),
-                    "z": round(z, 4),
-                    "agirlik": agirlik,
-                    "katki": round(katki, 4),
-                }
-            g["puan"] = round(toplam, 4)
-            g["puan_kirilimi"] = kirilim
+
+            def eksen(bilesenler, agirlik_haritasi, normalize):
+                """Bir eksenin puanini ve kirilimini uretir."""
+                toplam, kirilim, kullanilan = 0.0, {}, 0.0
+                for metrik in bilesenler:
+                    deger = f.get(metrik)
+                    if deger is None or metrik not in istatistik:
+                        continue
+                    ort, sapma = istatistik[metrik]
+                    z = _z(deger, ort, sapma, kirpma)
+                    if metrik in TERS:
+                        z = -z
+                    ham = agirlik_haritasi.get(metrik, 0)
+                    agirlik = (ham / normalize) if normalize else 0.0
+                    katki = agirlik * z
+                    toplam += katki
+                    kullanilan += agirlik
+                    kirilim[metrik] = {
+                        "deger": round(deger, 4),
+                        "kategori_ortalamasi": round(ort, 4),
+                        "z": round(z, 4),
+                        "agirlik": round(agirlik, 4),
+                        "katki": round(katki, 4),
+                    }
+                if kullanilan <= 0:
+                    return None, {}
+                return round(toplam, 4), kirilim
+
+            getiri_puani, getiri_kirilimi = eksen(
+                GETIRI_BILESENLERI, agirliklar, getiri_toplam)
+            risk_puani, risk_kirilimi = eksen(
+                RISK_BILESENLERI, RISK_AGIRLIKLARI,
+                sum(RISK_AGIRLIKLARI.values()))
+
+            # GETIRI EKSENI: gecmisin tasviri, ongoru iddiasi yok.
+            g["getiri_puani"] = getiri_puani
+            g["getiri_kirilimi"] = getiri_kirilimi
+            # RISK EKSENI: akranlarina gore ne kadar sakin. Yuksek = sakin.
+            # Bu bir YARGI degil PROFIL: hisse fonunda dusuk oynaklik,
+            # fonun isini yapmamasi da olabilir.
+            g["risk_puani"] = risk_puani
+            g["risk_kirilimi"] = risk_kirilimi
+
+            # `puan` GERIYE UYUMLULUK icin getiri eksenine esitlenir.
+            # Yeni kod getiri_puani kullanmali; bu alan "kalite puani"
+            # DEGILDIR ve oyle okunmamalidir.
+            g["puan"] = getiri_puani
+            g["puan_kirilimi"] = getiri_kirilimi
             g["kategori_fon_sayisi"] = len(grup)
             puanlanan.append(g)
 
-    # Kategori icinde sirala ve sira numarasi ver.
+    # HER EKSEN ICIN AYRI SIRA. Tek bir "kategori sirasi" iki farkli
+    # bilgiyi tek sayiya ezmek olurdu; kullanici hangi eksende baktigini
+    # bilerek secmeli.
     for (tip, kategori) in gruplar:
         alt = [f for f in puanlanan
                if f.get("fon_tipi") == tip and f.get("kategori_ad") == kategori]
-        alt.sort(key=lambda x: x["puan"], reverse=True)
-        for i, f in enumerate(alt, 1):
+
+        getirili = [f for f in alt if f.get("getiri_puani") is not None]
+        getirili.sort(key=lambda x: x["getiri_puani"], reverse=True)
+        for i, f in enumerate(getirili, 1):
+            f["getiri_sirasi"] = i
+            # Geriye uyumluluk: eski alan getiri sirasini gosterir.
             f["kategori_sirasi"] = i
+
+        riskli = [f for f in alt if f.get("risk_puani") is not None]
+        riskli.sort(key=lambda x: x["risk_puani"], reverse=True)
+        for i, f in enumerate(riskli, 1):
+            f["risk_sirasi"] = i
 
     puanlanan.sort(key=lambda x: (x.get("fon_tipi", ""),
                                   x.get("kategori_ad", ""),
-                                  x.get("kategori_sirasi", 0)))
+                                  x.get("getiri_sirasi", 0)))
     return puanlanan, puanlanmayan
 
 

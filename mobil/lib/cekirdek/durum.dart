@@ -126,18 +126,16 @@ class UygulamaDurumu extends ChangeNotifier {
         ..sort((a, b) => a.fon.kod.compareTo(b.fon.kod));
 
   List<PuanliFon> ara(String sorgu) {
-    final s = sorgu.trim().toUpperCase();
+    final s = katla(sorgu.trim());
     if (s.isEmpty) return const [];
     return _puanli
-        .where((p) =>
-            p.fon.kod.toUpperCase().contains(s) ||
-            p.fon.ad.toUpperCase().contains(s))
+        .where((p) => katla(p.fon.kod).contains(s) || katla(p.fon.ad).contains(s))
         .take(80)
         .toList()
       ..sort((a, b) {
         // Kod tam eşleşmesi en üstte.
-        final ax = a.fon.kod.toUpperCase() == s ? 0 : 1;
-        final bx = b.fon.kod.toUpperCase() == s ? 0 : 1;
+        final ax = katla(a.fon.kod) == s ? 0 : 1;
+        final bx = katla(b.fon.kod) == s ? 0 : 1;
         if (ax != bx) return ax - bx;
         return a.fon.kod.compareTo(b.fon.kod);
       });
@@ -183,4 +181,36 @@ class Kapsam extends InheritedNotifier<UygulamaDurumu> {
     assert(k != null, 'Kapsam bulunamadı');
     return k!.notifier!;
   }
+}
+
+/// TÜRKÇE ARAMA KATLAMASI.
+///
+/// Dart'ın `toUpperCase()`/`toLowerCase()` metodları Türkçe I/İ ayrımını
+/// bilmez ve arama SESSİZCE çalışmaz hale gelir:
+///
+///     'AGESA BİRİNCİ PARA PİYASASI'.toUpperCase()
+///         .contains('piyasasi'.toUpperCase())   // false
+///
+/// Kullanıcı "piyasasi" yazdığında hiçbir fon bulunmuyordu; TEFAS fon
+/// adlarının neredeyse hepsinde İ, Ş, Ğ geçtiği için bu, aramayı büyük
+/// ölçüde kullanılmaz kılıyordu.
+///
+/// Çözüm: iki tarafı da ASCII'ye katla. Yan faydası, Türkçe klavyesi
+/// olmayan ya da aceleyle yazan kullanıcının "gunluk" yazıp "GÜNLÜK"
+/// bulabilmesi.
+String katla(String metin) {
+  const harita = {
+    'İ': 'i', 'I': 'i', 'ı': 'i',
+    'Ş': 's', 'ş': 's',
+    'Ğ': 'g', 'ğ': 'g',
+    'Ü': 'u', 'ü': 'u',
+    'Ö': 'o', 'ö': 'o',
+    'Ç': 'c', 'ç': 'c',
+    '̇': '', // birleştirici üst nokta: lower()'ın bıraktığı iz
+  };
+  final tampon = StringBuffer();
+  for (final k in metin.split('')) {
+    tampon.write(harita[k] ?? k);
+  }
+  return tampon.toString().toLowerCase();
 }

@@ -9,7 +9,13 @@ import 'ana_kabuk.dart';
 import 'detay_sayfasi.dart';
 import 'grafik.dart';
 
-enum _Sutun { kod, gunluk, haftalik, aylik, ucAylik, yillik, puan }
+/// Tablo sutunlari.
+///
+/// `puan` ve `risk` IKI AYRI EKSENDIR, tek bir kalite skorunun parcalari
+/// degil. Olculdu: gecmis getiriye gore siralama gelecegi tutmuyor
+/// (ileri Spearman ~0,05) ama oynaklik kalici (0,76). Ikisini tek sayida
+/// toplamak, tutmayan bileseni tutan bilesenle bulaniklastiriyordu.
+enum _Sutun { kod, gunluk, haftalik, aylik, ucAylik, yillik, puan, risk }
 
 const _basliklar = {
   _Sutun.kod: 'Fon',
@@ -18,7 +24,10 @@ const _basliklar = {
   _Sutun.aylik: 'Aylık',
   _Sutun.ucAylik: '3 Aylık',
   _Sutun.yillik: 'Yıllık',
-  _Sutun.puan: 'Puan',
+  // IKI AYRI EKSEN. Tek 'Puan' sutunu, geleceği tutmayan getiri
+  // bileseniyle kalici olan risk bilesenini tek sayida topluyordu.
+  _Sutun.puan: 'Getiri',
+  _Sutun.risk: 'Sakinlik',
 };
 
 const _genislikler = {
@@ -29,6 +38,7 @@ const _genislikler = {
   _Sutun.ucAylik: 82.0,
   _Sutun.yillik: 82.0,
   _Sutun.puan: 70.0,
+  _Sutun.risk: 78.0,
 };
 
 class TabloSayfasi extends StatefulWidget {
@@ -49,7 +59,8 @@ class _TabloSayfasiDurumu extends State<TabloSayfasi> {
         _Sutun.aylik => k.fon.getiri.aylik,
         _Sutun.ucAylik => k.fon.getiri.ucAylik,
         _Sutun.yillik => k.fon.getiri.yillik,
-        _Sutun.puan => k.puan,
+        _Sutun.puan => k.fon.getiriPuani ?? k.puan,
+        _Sutun.risk => k.fon.riskPuani,
       };
 
   void _basligaDokun(_Sutun s) {

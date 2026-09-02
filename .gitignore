@@ -35,3 +35,12 @@ mobil/android/key.properties
 .idea/
 *.iml
 Thumbs.db
+
+# PyInstaller ciktilari — masaustu surumu her makinede yeniden derlenir.
+# dist/TefasTarayici.exe 35 MB; depoya girmemeli.
+build/
+dist/
+*.spec.bak
+
+# Gelistirme sirasinda alinan ekran goruntuleri
+ekran_*.png

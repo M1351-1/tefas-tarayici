@@ -29,6 +29,7 @@ import metrikler as _met
 import olcut as _olcut
 import puanlama as _puan
 import uret as _uret
+import ongoru as _ongoru
 import veritabani as _vt
 
 VT_YOLU = KOK / "data" / "fon_gecmis.db"
@@ -267,9 +268,35 @@ def hesapla_ve_yaz(depo, ayarlar):
     yaz("  %d fon puanlandi, %d fon puanlanmadi (kategori kucuk)"
         % (len(puanlanan), len(puanlanmayan)))
 
+    # ONGORU GUCU: siralamanin gelecegi tutup tutmadigini OLC.
+    #
+    # Uygulama "kategori sirasi 1" derken bir iddiada bulunuyor; iddianin
+    # sinanmasi gerekir. Olcum her toplamada yeniden yapiliyor ki piyasa
+    # degisirse sonuc da degissin. Cokerse toplama durmasin - bu bir ek
+    # bilgi, siralamanin girdisi degil.
+    ongoru_gucu = None
+    try:
+        kat_haritasi = {
+            f["fon_kodu"]: (f.get("fon_tipi", "?"),
+                            f.get("kategori_ad", "Bilinmiyor"))
+            for f in fonlar
+        }
+        fiyat_haritasi = {
+            kod: {t: p for t, p in seri} for kod, seri in seriler.items()
+        }
+        ongoru_gucu = _ongoru.yorumla(
+            _ongoru.olc(fiyat_haritasi, kat_haritasi, "getiri"),
+            _ongoru.olc(fiyat_haritasi, kat_haritasi, "volatilite"),
+            _ongoru.istikrar_olc(fiyat_haritasi, kat_haritasi),
+        )
+        yaz("  ongoru gucu olculdu: " + ongoru_gucu["durum"])
+    except Exception as hata:  # noqa: BLE001
+        yaz("  UYARI: ongoru gucu olculemedi (%s)" % type(hata).__name__)
+
     veri_tarihi = depo.en_son_tarih()
     boyut = _uret.ozet_yaz(JSON_YOLU, puanlanan, puanlanmayan, elenen,
-                           ayarlar, veri_tarihi, olcut_bilgisi)
+                           ayarlar, veri_tarihi, olcut_bilgisi,
+                           ongoru_gucu=ongoru_gucu)
     yaz("  fonlar.json yazildi: %.2f MB" % (boyut / 1024 / 1024))
 
     kodlar = [f["fon_kodu"] for f in puanlanan + puanlanmayan]
