@@ -95,6 +95,26 @@ def maks_dusus(seri, pencere=DUSUS_PENCERE):
     """En buyuk tepe-dip kaybi (%), NEGATIF sayi olarak.
 
     -18.4 => zirveden dibe %18,4 kaybettirmis.
+
+    SIFIR/NEGATIF FIYAT ATLANMAZ, METRIK GECERSIZ SAYILIR.
+    ======================================================
+
+    Once `fiyat <= 0` olan gozlemler `continue` ile ATLANIYORDU. Niyet
+    bozuk veriden korunmakti ama sonuc en kotu durumu sessizce silmekti:
+
+        maks_dusus([100, 0])      -> 0.0    (hic dusmemis!)
+        maks_dusus([100, 50, 0])  -> -50.0  (sifira inis yok sayildi)
+
+    Bu, risk puaninin %40'ini besleyen metrik. Cokmus bir fon "sakin"
+    gorunuyordu.
+
+    Sifir fiyat iki sey olabilir ve veriden AYIRT EDILEMEZ:
+      (a) veri hatasi,
+      (b) gercek tam kayip.
+    Ikisinde de "dusus yok" YANLIS cevap. Bu yuzden artik None donuyor:
+    metrik olculemedi demek, uydurmaktan iyidir. `GEREKLI` listesinde
+    olmadigi icin fon tumden elenmez; risk puani yalnizca oynakliktan
+    hesaplanir ve `eksen()` kalan agirligi yeniden normalize eder.
     """
     if len(seri) < 2:
         return None
@@ -102,8 +122,11 @@ def maks_dusus(seri, pencere=DUSUS_PENCERE):
     zirve = None
     en_kotu = 0.0
     for _, fiyat in son:
-        if fiyat is None or fiyat <= 0:
+        if fiyat is None:
             continue
+        if fiyat <= 0:
+            # Gecersiz ya da tam kayip: hangisi oldugu bilinemez.
+            return None
         if zirve is None or fiyat > zirve:
             zirve = fiyat
         dusus = (fiyat / zirve - 1.0) * 100.0

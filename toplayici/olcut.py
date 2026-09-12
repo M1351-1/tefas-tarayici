@@ -120,10 +120,25 @@ def net_getiri(vergi_oncesi, stopaj):
     Stopaj kazanc uzerinden SATISTA kesilir; gunluk/haftalik fiyat
     hareketine uygulanmaz. Bu yuzden sadece YILLIK getiriye ve olcut
     karsilastirmasina uygulaniyor.
+
+    ZARARA STOPAJ UYGULANMAZ.
+    ========================
+
+    Formul dogrudan `getiri * (1 - stopaj)` idi ve NEGATIF getiride ters
+    cikiyordu: `net_getiri(-20, 0.175)` **-16,5** veriyordu. Yani %20
+    zarar, %16,5 zarar gibi gorunuyordu — devlet zararin bir kismini geri
+    vermis gibi.
+
+    Dogrusu `R - oran * max(R, 0)`: kazanctan kesilir, zarardan
+    kesilmez. Baska islemlerle zarar mahsubu gercek hayatta olabilir ama
+    o AYRI bir modelleme konusudur; burada kendiliginden bir nakit vergi
+    avantaji varsayilamaz.
     """
     if vergi_oncesi is None or stopaj is None:
         return None
-    return vergi_oncesi * (1.0 - stopaj)
+    if vergi_oncesi <= 0:
+        return vergi_oncesi
+    return vergi_oncesi - stopaj * vergi_oncesi
 
 
 def bilesikten_basite(bilesik_yillik):

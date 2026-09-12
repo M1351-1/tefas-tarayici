@@ -294,3 +294,74 @@ def test_maks_dusus_tek_basina_sirayi_belirler():
     sirali = [f["fon_kodu"] for f in
               sorted(puanlanan, key=lambda f: -f["risk_puani"])]
     assert sirali == ["F%02d" % i for i in range(10)], sirali
+
+
+def test_gecersiz_sayi_en_iyi_puani_almaz():
+    """GERILEME TESTI — NaN en yuksek z'yi aliyordu.
+
+    `_z` sonluluk kontrolu yapmiyordu: `(nan - ort) / sapma` -> nan,
+    sonra `min(kirpma, nan)` Python'da `kirpma` donduruyor (
+    karsilastirma False oldugu icin). Yani `_z(nan, 0, 1, 3)` = +3.
+    Bozuk veriyle gelen fon, kategorisinin en iyisi gibi puanlaniyordu.
+    """
+    assert p._z(float("nan"), 0.0, 1.0, 3) is None
+    assert p._z(float("inf"), 0.0, 1.0, 3) is None
+    assert p._z(float("-inf"), 0.0, 1.0, 3) is None
+    assert p._z(None, 0.0, 1.0, 3) is None
+    # Gecerli sayi etkilenmemeli, yoksa test "hep None dondur" ile gecer.
+    assert abs(p._z(2.0, 0.0, 1.0, 3) - 2.0) < 1e-9
+
+
+def test_puan_kirilimin_normalize_toplamina_esit():
+    """GERILEME TESTI — eksik bilesen puani sifira cekiyordu.
+
+    Risk ekseni agirliklari volatilite 0,6 + maks_dusus 0,4. Dususu
+    hesaplanamayan fonda toplam yalnizca 0,6 x z oluyor ve sonuc
+    KULLANILAN AGIRLIGA BOLUNMUYORDU. Yani eksik veri, puani sistematik
+    olarak sifira (yani "ortalama risk"e) dogru cekiyordu.
+
+    Sinanan degismez: yayimlanan puan, fonun KENDI kirilimindaki
+    katkilarin kullanilan agirliga bolunmus toplamina esit olmali. Butun
+    bilesenler varken bolen 1,0 oldugu icin tam kayitlar degismez;
+    kural yalnizca eksik kayitlari duzeltir.
+    """
+    fonlar = grup(12)
+    for i, f in enumerate(fonlar):
+        f["volatilite"] = 10.0 + i * 4
+        f["maks_dusus"] = -5.0 - i * 6
+    fonlar[1]["maks_dusus"] = None          # tek eksik kayit
+    puanlanan, _ = p.puanla(fonlar, AYAR)
+    eksikli = next(f for f in puanlanan if f["fon_kodu"] == "F01")
+    assert "maks_dusus" not in eksikli["risk_kirilimi"]
+
+    for f in puanlanan:
+        for eksen_adi, kirilim_adi in (("risk_puani", "risk_kirilimi"),
+                                       ("getiri_puani", "getiri_kirilimi")):
+            k = f[kirilim_adi]
+            if not k:
+                continue
+            agirlik = sum(v["agirlik"] for v in k.values())
+            katki = sum(v["katki"] for v in k.values())
+            assert abs(f[eksen_adi] - katki / agirlik) < 1e-3, (
+                "%s: %s=%.4f ama kirilim %.4f/%.4f=%.4f"
+                % (f["fon_kodu"], eksen_adi, f[eksen_adi], katki, agirlik,
+                   katki / agirlik))
+
+
+def test_eksik_bilesen_isaretlenir():
+    """Eksik bilesenli puan, tam puanla ayni sutunda KIYASLANMAMALI.
+
+    Yeniden normalize etmek olcegi duzeltir ama belirsizligi yok etmez:
+    tek bilesenden uretilen puan daha az bilgiyle kurulmustur. Arayuzun
+    bunu isaretleyebilmesi icin hangi bilesenlerin eksik oldugu disari
+    yaziliyor.
+    """
+    fonlar = grup(12)
+    for i, f in enumerate(fonlar):
+        f["volatilite"] = 10.0 + i * 4
+        f["maks_dusus"] = -5.0 - i * 6
+    fonlar[1]["maks_dusus"] = None
+    puanlanan, _ = p.puanla(fonlar, AYAR)
+    d = {f["fon_kodu"]: f for f in puanlanan}
+    assert d["F01"]["risk_eksik_bilesen"] == ["maks_dusus"]
+    assert d["F00"]["risk_eksik_bilesen"] == []

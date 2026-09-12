@@ -65,6 +65,11 @@ ADIM = 21
 # Dilim buyuklugu: ust/alt %20.
 DILIM = 5
 
+# Bir iliskiyi "kalici" diye ANMAK icin gereken en az sira
+# korelasyonu. Bu bir istatistiksel sinama DEGIL, raporlama
+# esigidir: metnin kendi sayisiyla celismemesini saglar.
+KALICI_ESIK = 0.40
+
 
 def _siralar(degerler: list) -> list:
     """Ortalama sirali siralama (beraberlik duzeltmeli).
@@ -147,6 +152,19 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
 
     for ufuk in UFUKLAR:
         ro_list, ust_list, alt_list = [], [], []
+        # TAHMIN BASLANGICI AYRI SAYILIR.
+        #
+        # `olcum_sayisi` = baslangic x kategori. Kategoriler kesitsel
+        # tekrar saglar, o gercek bilgidir — ama hepsi AYNI piyasa
+        # rejimini yasar. "Bu iliski zaman icinde kalici mi" sorusu
+        # zamansal tekrar ister. Tek bir sayi vermek bagimsizligi
+        # abartiyordu: 85 olcum, 5 baslangictan geliyordu.
+        #
+        # Ustelik ileri pencereler ADIM'dan uzun oldugunda baslangiclar
+        # da ortusur; ortusmeyen en buyuk alt kume `ortusmeyen_baslangic`
+        # olarak bildirilir (ADIM=21 iken 126 gunluk ufukta 1'e kadar
+        # dusuyor).
+        baslangic_sayisi = 0
         for ti in range(GECMIS_PENCERE, len(tarihler) - ufuk, ADIM):
             gruplar = defaultdict(list)
             for fon, fiyatlar in seriler.items():
@@ -157,9 +175,11 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
                 gruplar[kategoriler.get(fon, ("?", "?"))].append(
                     (gecmis, ileri))
 
+            kullanildi = False
             for cift in gruplar.values():
                 if len(cift) < ASGARI_FON:
                     continue
+                kullanildi = True
                 ro = _spearman(cift)
                 if ro is not None:
                     ro_list.append(ro)
@@ -167,6 +187,8 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
                 k = max(1, len(cift) // DILIM)
                 ust_list.append(sum(c[1] for c in sirali[:k]) / k)
                 alt_list.append(sum(c[1] for c in sirali[-k:]) / k)
+            if kullanildi:
+                baslangic_sayisi += 1
 
         if not ro_list:
             continue
@@ -174,7 +196,14 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
             "spearman": round(sum(ro_list) / len(ro_list), 3),
             "ust_dilim": round(sum(ust_list) / len(ust_list), 2),
             "alt_dilim": round(sum(alt_list) / len(alt_list), 2),
+            # kategori-tarih hucresi sayisi (kesitsel tekrar dahil)
             "olcum_sayisi": len(ro_list),
+            # zamansal tekrar: kac ayri tahmin baslangici kullanildi
+            "baslangic_sayisi": baslangic_sayisi,
+            # ileri pencereleri ortusmeyen en buyuk baslangic alt kumesi
+            "ortusmeyen_baslangic": max(
+                1, -(-baslangic_sayisi // max(1, -(-ufuk // ADIM)))
+            ) if baslangic_sayisi else 0,
         }
     return sonuc
 
@@ -207,12 +236,35 @@ def yorumla(getiri_gucu: dict, vol_gucu: dict,
     )
 
     if v:
-        ozet += (
-            " Buna karşılık OYNAKLIK kalıcı: sıra korelasyonu %.2f. "
-            "Yani \"bu fon oynak\" demek geleceğe dair gerçek bir ifade, "
-            "\"bu fon geçen ay iyi getirdi\" değil."
-            % v["spearman"]
-        )
+        # METIN KENDI SAYISINI KONTROL ETMELI.
+        #
+        # Bu cumle bir donem KOSULSUZ yaziliyordu: veri varsa "OYNAKLIK
+        # kalici" deniyordu. Sinandi ve gerceklesti — korelasyon -0,90 ve
+        # olcum sayisi 1 verildiginde metin yine kalicilik iddia ediyordu.
+        # Yani ekrana bastigi sayiyla celisen bir cumle uretiyordu.
+        oyn = v["spearman"]
+        yeter = v.get("ortusmeyen_baslangic", 0) >= 2
+        if oyn >= KALICI_ESIK and yeter:
+            ozet += (
+                " Buna karşılık OYNAKLIK kalıcı: sıra korelasyonu %.2f. "
+                "Yani \"bu fon oynak\" demek geleceğe dair gerçek bir "
+                "ifade, \"bu fon geçen ay iyi getirdi\" değil." % oyn)
+        elif oyn >= KALICI_ESIK:
+            ozet += (
+                " Oynaklıkta sıra korelasyonu %.2f gibi yüksek çıktı ama "
+                "örtüşmeyen tahmin başlangıcı sayısı %d; bu ilişkinin "
+                "farklı piyasa dönemlerinde de sürdüğü bu veriyle "
+                "gösterilemez." % (oyn, v.get("ortusmeyen_baslangic", 0)))
+        elif oyn <= -KALICI_ESIK:
+            ozet += (
+                " Oynaklıkta sıra korelasyonu %.2f, yani TERS yönlü: "
+                "geçmişte sakin olan sonraki dönemde oynak çıkmış. Bu "
+                "beklenmeyen bir sonuç; veri veya ölçüm kontrol "
+                "edilmeli." % oyn)
+        else:
+            ozet += (
+                " Oynaklıkta da sıra korelasyonu %.2f; bu veriyle kalıcı "
+                "bir ilişki gösterilemedi." % oyn)
 
     # ISTIKRAR: "duzenli olarak akranlarini gecmek" AYRI bir sorudur ve
     # akilli filtre buna dayaniyor. Olculdu: 3 ayda 0,09 (ust dilim alt
@@ -223,10 +275,12 @@ def yorumla(getiri_gucu: dict, vol_gucu: dict,
         ozet += (
             " İSTİKRAR (düzenli olarak akranlarını geçmek) ayrı ölçüldü: "
             "sıra korelasyonu %.2f, üst %%20 dilim %%%.1f, alt %%20 dilim "
-            "%%%.1f. Ham getiriden biraz iyi ama güvenilir sayılacak kadar "
-            "değil — %d ölçüm noktası var."
+            "%%%.1f. Bu hesap %d kategori-tarih hücresinden geliyor ama "
+            "yalnızca %d tahmin başlangıcı var (örtüşmeyen: %d); bu "
+            "kadar kısa veriyle güvenilir bir sonuç çıkarılamaz."
             % (i["spearman"], i["ust_dilim"], i["alt_dilim"],
-               i["olcum_sayisi"])
+               i["olcum_sayisi"], i.get("baslangic_sayisi", 0),
+               i.get("ortusmeyen_baslangic", 0))
         )
 
     return {

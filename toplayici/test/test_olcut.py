@@ -294,3 +294,27 @@ def test_stopaj_hisse_fonunu_one_gecirir():
     hisse_net = o.net_getiri(58.0, o.STOPAJ_MUAF)        # 58,0
     assert 60.0 > 58.0          # brut: PPF onde
     assert hisse_net > ppf_net  # net: hisse fonu onde
+
+
+def test_zarara_stopaj_uygulanmaz():
+    """GERILEME TESTI — zarara vergi indirimi.
+
+    Formul `getiri * (1 - stopaj)` idi ve negatif getiride ters
+    cikiyordu: net_getiri(-20, 0.175) = -16,5. Yani %20 zarar, %16,5
+    zarar gibi gosteriliyordu; devlet zararin bir kismini geri vermis
+    gibi. Zarar mahsubu gercek hayatta olabilir ama o AYRI bir
+    modelleme konusudur, kendiliginden varsayilamaz.
+    """
+    assert o.net_getiri(-20.0, 0.175) == -20.0
+    assert o.net_getiri(-0.001, 0.175) == -0.001
+    assert o.net_getiri(0.0, 0.175) == 0.0
+
+
+def test_kazanctan_stopaj_kesilir():
+    """Ustteki testin tersi: kural "hic kesme" degil.
+
+    Bu olmadan net_getiri'yi kimliğe cevirmek de testi gecirirdi.
+    """
+    assert abs(o.net_getiri(100.0, 0.175) - 82.5) < 1e-9
+    assert abs(o.net_getiri(5.0, 0.175) - 4.125) < 1e-9
+    assert o.net_getiri(100.0, 0.0) == 100.0

@@ -114,3 +114,34 @@ def test_hesapla_bos_seri_cokmez():
     assert h["gozlem_sayisi"] == 0
     assert h["son_fiyat"] is None
     assert h["gunluk_getiri"] is None
+
+
+def test_sifir_fiyat_dususu_gizlemez():
+    """GERILEME TESTI — en kotu durumun sessizce silinmesi.
+
+    `fiyat <= 0` olan gozlemler `continue` ile ATLANIYORDU. Niyet bozuk
+    veriden korunmakti ama sonuc su oldu:
+
+        maks_dusus([100, 0])      -> 0.0    (hic dusmemis!)
+        maks_dusus([100, 50, 0])  -> -50.0  (sifira inis yok sayildi)
+
+    Bu metrik risk puaninin %40'ini besliyor; cokmus fon "sakin"
+    gorunuyordu. Sifir fiyat veri hatasi da tam kayip da olabilir ve
+    ikisi veriden ayirt edilemez — ama "dusus yok" her iki halde de
+    YANLIS cevap. Bu yuzden metrik gecersiz sayilir (None).
+    """
+    assert m.maks_dusus([("2026-01-01", 100.0), ("2026-01-02", 0.0)]) is None
+    assert m.maks_dusus([("2026-01-01", 100.0), ("2026-01-02", 50.0),
+                         ("2026-01-03", 0.0)]) is None
+    assert m.maks_dusus([("2026-01-01", 100.0),
+                         ("2026-01-02", -1.0)]) is None
+
+
+def test_gecerli_seride_dusus_hesaplanmaya_devam_eder():
+    """Ustteki testin tersi: kural "sifir gorursen vazgec" degil.
+
+    Bu olmadan maks_dusus'u "hep None dondur" yapmak da testi gecirirdi.
+    """
+    d = m.maks_dusus([("2026-01-01", 100.0), ("2026-01-02", 75.0),
+                      ("2026-01-03", 90.0)])
+    assert abs(d - (-25.0)) < 1e-9

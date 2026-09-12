@@ -96,7 +96,20 @@ def _z(x, ort, sapma, kirpma):
     Kirpma neden gerekli: tek bir ucuk fon (ornegin serbest fonda %900
     aylik getiri) standart sapmayi sisirir ve digerlerinin z-skorunu
     sifira ezer. Kirpmadan siralama tek fonun rehinesi olur.
+
+    GECERSIZ SAYI EN IYI PUANI ALMAMALI.
+    ====================================
+
+    Sonluluk kontrolu yoktu ve NaN/sonsuz deger EN YUKSEK z'yi aliyordu:
+    `(nan - ort) / sapma` -> nan, sonra `min(kirpma, nan)` Python'da
+    `kirpma` donduruyor (karsilastirma False oldugu icin). Yani
+    `_z(nan, 0, 1, 3)` = **+3**. Bozuk veriyle gelen bir fon, kategorisinin
+    en iyisi gibi puanlaniyordu.
+
+    Artik None donuyor; cagiran taraf bileseni yok sayar.
     """
+    if x is None or not math.isfinite(x):
+        return None
     if sapma <= 0:
         return 0.0
     z = (x - ort) / sapma
@@ -182,7 +195,24 @@ def puanla(fonlar, ayarlar):
             g = dict(f)
 
             def eksen(bilesenler, agirlik_haritasi, normalize):
-                """Bir eksenin puanini ve kirilimini uretir."""
+                """Bir eksenin puanini ve kirilimini uretir.
+
+                EKSIK BILESEN PUANI KUCULTMEMELI.
+                =================================
+
+                Once `toplam` dogrudan donuyordu. Bileseni eksik olan fon
+                bu yuzden sistematik olarak SIFIRA yakin puan aliyordu:
+                maksimum dususu hesaplanamayan bir fonun risk puani
+                yalnizca oynakliktan geliyor, yani buyuklugu %60'a
+                sikisiyordu. Eksik veri, "ortalama risk" gibi gorunuyordu.
+
+                Artik kullanilan agirliga bolunuyor. Butun bilesenler
+                varken `kullanilan` 1,0 oldugu icin tam kayitlarda sonuc
+                DEGISMEZ; yalnizca eksik kayitlar duzelir.
+
+                Ayrica `_z` gecersiz sayida None donuyor; o bilesen hic
+                sayilmaz (once NaN en yuksek puani aliyordu).
+                """
                 toplam, kirilim, kullanilan = 0.0, {}, 0.0
                 for metrik in bilesenler:
                     deger = f.get(metrik)
@@ -190,6 +220,8 @@ def puanla(fonlar, ayarlar):
                         continue
                     ort, sapma = istatistik[metrik]
                     z = _z(deger, ort, sapma, kirpma)
+                    if z is None:
+                        continue
                     if metrik in TERS:
                         z = -z
                     ham = agirlik_haritasi.get(metrik, 0)
@@ -206,7 +238,7 @@ def puanla(fonlar, ayarlar):
                     }
                 if kullanilan <= 0:
                     return None, {}
-                return round(toplam, 4), kirilim
+                return round(toplam / kullanilan, 4), kirilim
 
             getiri_puani, getiri_kirilimi = eksen(
                 GETIRI_BILESENLERI, agirliklar, getiri_toplam)
@@ -222,6 +254,15 @@ def puanla(fonlar, ayarlar):
             # fonun isini yapmamasi da olabilir.
             g["risk_puani"] = risk_puani
             g["risk_kirilimi"] = risk_kirilimi
+            # HANGI BILESEN EKSIK KALDI.
+            #
+            # Yeniden normalize etmek olcegi duzeltir ama belirsizligi yok
+            # etmez: tek bilesenden uretilen puan daha az bilgiyle
+            # kurulmustur. Arayuz bunu isaretleyebilsin diye disari
+            # yaziliyor; eksik bilesenli puan tam puanla ayni sutunda
+            # kayitsizca kiyaslanmamali.
+            g["risk_eksik_bilesen"] = [
+                m for m in RISK_BILESENLERI if m not in (risk_kirilimi or {})]
 
             # `puan` GERIYE UYUMLULUK icin getiri eksenine esitlenir.
             # Yeni kod getiri_puani kullanmali; bu alan "kalite puani"
