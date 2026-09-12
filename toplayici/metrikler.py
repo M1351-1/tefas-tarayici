@@ -125,12 +125,30 @@ def gunluk_getiriler(seri, azami_bosluk_gun=AZAMI_BOSLUK_GUN):
     fiyatlanmamis" demektir; o araligi olceklendirmek yerine ATLIYORUZ.
     Olceklendirme (1/kok(gun)) bagimsiz artis varsayimi gerektirir ve
     askiya alinmis bir fon icin bu varsayim savunulamaz.
+
+    SIFIR FIYAT -%100'LUK "GUNLUK GETIRI" URETMEMELI.
+    ================================================
+
+    `maks_dusus` icinde sifir fiyat gecersiz sayiliyordu ama BURADA
+    yalnizca `onceki > 0` kontrol ediliyordu; `simdiki = 0` gecebiliyor
+    ve -%100'luk bir gunluk getiri uretiyordu. Tek basina bu gozlem
+    oynakligi ~%200'e cikariyor.
+
+    Olculdu (KPS, yayimlanan veri): 2026-01-13'te 1,00 -> 2026-01-14'te
+    0,00. Bosluk duzeltmesinden SONRA bile oynaklik %284,59 kaliyordu ve
+    sebebi boslук degil bu tek gozlemdi.
+
+    Sifir fiyat veri hatasi da tam kayip da olabilir; ikisi de "bugun
+    %100 kaybetti" diye gunluk oynakliga yazilamaz. `maks_dusus` ile
+    ayni kural: gozlem atlanir.
     """
     cikti = []
     for i in range(1, len(seri)):
         onceki = seri[i - 1][1]
         simdiki = seri[i][1]
-        if not (onceki and onceki > 0 and simdiki is not None):
+        if not (onceki and onceki > 0):
+            continue
+        if simdiki is None or simdiki <= 0:
             continue
         if _gun_farki(seri[i - 1][0], seri[i][0]) > azami_bosluk_gun:
             continue

@@ -372,6 +372,11 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
 
     for ufuk in (63, 126):
         ro_list, ust_list, alt_list = [], [], []
+        # `olc()` ile AYNI muhasebe: olcum sayisi baslangic x kategori
+        # oldugu icin tek basina bagimsizligi abartir. Istikrar bloku
+        # bir donem bu alanlari HIC uretmiyordu ve yayimlanan JSON'da
+        # None kaliyordu; ozet metni de 0 yaziyordu.
+        baslangic_sayisi = 0
         for ti in range(gecmis, len(tarihler) - ufuk, ADIM):
             kat_getiri = defaultdict(lambda: defaultdict(list))
             gecmisler = {}
@@ -403,9 +408,11 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
                     continue
                 gruplar[anahtar].append((oran, (f[t1] / f[t0] - 1) * 100))
 
+            kullanildi = False
             for cift in gruplar.values():
                 if len(cift) < ASGARI_FON:
                     continue
+                kullanildi = True
                 ro = _spearman(cift)
                 if ro is not None:
                     ro_list.append(ro)
@@ -421,6 +428,8 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
                     ust_list.append(ust)
                 if alt is not None:
                     alt_list.append(alt)
+            if kullanildi:
+                baslangic_sayisi += 1
 
         if ro_list:
             sonuc[ufuk] = {
@@ -428,5 +437,9 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
                 "ust_dilim": round(sum(ust_list) / len(ust_list), 2),
                 "alt_dilim": round(sum(alt_list) / len(alt_list), 2),
                 "olcum_sayisi": len(ro_list),
+                "baslangic_sayisi": baslangic_sayisi,
+                "ortusmeyen_baslangic": max(
+                    1, -(-baslangic_sayisi // max(1, -(-ufuk // ADIM)))
+                ) if baslangic_sayisi else 0,
             }
     return sonuc

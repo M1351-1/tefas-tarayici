@@ -360,3 +360,31 @@ def test_olc_dilimleri_sozluk_sirasindan_bagimsiz():
             assert abs(ra[ufuk][alan] - rb[ufuk][alan]) < 1e-6, (
                 "%d gun %s: %.4f vs %.4f — sonuc sozluk sirasina bagli"
                 % (ufuk, alan, ra[ufuk][alan], rb[ufuk][alan]))
+
+
+def test_istikrar_da_baslangic_sayilarini_bildirir():
+    """GERILEME TESTI — istikrar bloku alanlari hic uretmiyordu.
+
+    `olc()` guncellendi ama `istikrar_olc()` kendi sonucunu AYRI
+    kuruyordu ve `baslangic_sayisi`/`ortusmeyen_baslangic` alanlari
+    yayimlanan JSON'da None kaliyordu. Ozet metni de bunlari 0 diye
+    yaziyordu — yani "hic bagimsiz donem yok" gibi gorunuyordu.
+
+    Yayimlanan veride goruldu (2026-09-11):
+        getiri      ufuk 21: olcum=170 baslangic=10 ortusmeyen=10
+        istikrar    ufuk 63: olcum=85  baslangic=None ortusmeyen=None
+    """
+    n = 400
+    tarihler = ["2026-%03d" % i for i in range(n)]
+    seriler = {}
+    for i in range(20):
+        # Her fon farkli egimde artsin ki istikrar orani ayrissin.
+        seriler["F%02d" % i] = {
+            t: 100.0 * (1.0 + 0.0005 * i) ** j for j, t in enumerate(tarihler)}
+    kat = {k: ("YAT", "Test") for k in seriler}
+    sonuc = ongoru.istikrar_olc(seriler, kat)
+    assert sonuc, "istikrar olcumu uretilemedi; test bir sey sinamiyor"
+    for ufuk, v in sonuc.items():
+        assert v.get("baslangic_sayisi") is not None, ufuk
+        assert v.get("ortusmeyen_baslangic") is not None, ufuk
+        assert v["baslangic_sayisi"] >= v["ortusmeyen_baslangic"]

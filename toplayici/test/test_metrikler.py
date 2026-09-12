@@ -208,3 +208,32 @@ def test_yillik_volatilite_gozlem_yetmezse_none():
     m_ = m.hesapla(s)
     assert m_["volatilite"] is not None      # 60 gozlem yetiyor
     assert m_["yillik_volatilite"] is None   # 252 yetmiyor
+
+
+def test_sifir_fiyat_yuzde_yuz_gunluk_getiri_uretmez():
+    """GERILEME TESTI — sifir fiyat oynakligi patlatiyordu.
+
+    `maks_dusus` sifir fiyati gecersiz sayiyordu ama `gunluk_getiriler`
+    yalnizca `onceki > 0` kontrol ediyordu; `simdiki = 0` gecip -%100'luk
+    bir GUNLUK getiri uretiyordu. Tek basina bu gozlem oynakligi ~%200
+    yukseltir.
+
+    Olculdu (KPS, yayimlanan veri): 2026-01-13'te 1,00 -> 2026-01-14'te
+    0,00. Bosluk duzeltmesinden sonra bile oynaklik %284,59 kaliyordu;
+    sebebi bu tek gozlemdi. Kural eklenince %200,83.
+    """
+    seri = [("2026-01-01", 100.0), ("2026-01-02", 101.0),
+            ("2026-01-05", 0.0), ("2026-01-06", 1.0)]
+    g = m.gunluk_getiriler(seri)
+    assert all(x > -0.99 for x in g), "-%%100 getiri uretildi: %r" % (g,)
+    assert len(g) == 1, g
+
+
+def test_gecerli_dususler_korunur():
+    """Kural "buyuk dususu at" DEGIL — yalnizca sifir/negatif fiyat.
+
+    Gercek bir -%97 hareketi gizlemek, riski gizlemek olur.
+    """
+    seri = [("2026-01-01", 100.0), ("2026-01-02", 3.0)]
+    g = m.gunluk_getiriler(seri)
+    assert len(g) == 1 and abs(g[0] - (-0.97)) < 1e-9
