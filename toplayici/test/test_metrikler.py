@@ -145,3 +145,66 @@ def test_gecerli_seride_dusus_hesaplanmaya_devam_eder():
     d = m.maks_dusus([("2026-01-01", 100.0), ("2026-01-02", 75.0),
                       ("2026-01-03", 90.0)])
     assert abs(d - (-25.0)) < 1e-9
+
+
+def test_uzun_bosluk_gunluk_getiri_sayilmaz():
+    """GERILEME TESTI — ardisik gozlem, ardisik gun demek degil.
+
+    Tarihe hic bakilmiyordu: iki ardisik KAYIT arasindaki degisim
+    "gunluk getiri" sayilip kok(252) ile yillklandiriliyordu.
+    Fiyatlanmayan bir fonun 216 gunluk degisimi tek bir gunluk getiri
+    gibi isleniyordu.
+
+    Olculdu (gercek veri): PDR %182,58 oynaklik bildiriyordu, bosluklar
+    atlaninca %11,32; KPS 9582 -> 200. Butun fonlarda ortanca %6,86.
+    """
+    seri = [("2026-01-01", 100.0), ("2026-01-02", 101.0),
+            ("2026-08-01", 150.0), ("2026-08-02", 151.0)]
+    g = m.gunluk_getiriler(seri)
+    assert len(g) == 2, "216 gunluk atlama gunluk getiri sayildi: %r" % (g,)
+    assert abs(g[0] - 0.01) < 1e-9
+
+
+def test_bayram_bosluklari_atlanmaz():
+    """Esik "her boslugu at" DEGIL.
+
+    Normal hafta sonu + tatil 4 gune cikar, bayram 9 gune tasiyabilir.
+    Bunlari atmak gercek veriyi silmek olur; yalnizca 10 gunun otesi
+    "fon fiyatlanmamis" sayilir.
+    """
+    seri = [("2026-01-01", 100.0), ("2026-01-09", 102.0)]   # 8 gun
+    assert len(m.gunluk_getiriler(seri)) == 1
+    seri = [("2026-01-01", 100.0), ("2026-01-20", 102.0)]   # 19 gun
+    assert m.gunluk_getiriler(seri) == []
+
+
+def test_bozuk_tarih_cokmez():
+    seri = [(None, 100.0), ("2026-01-02", 101.0)]
+    assert isinstance(m.gunluk_getiriler(seri), list)
+
+
+def test_yillik_volatilite_ayri_pencereden_uretilir():
+    """Risk-ayarli getiri PAYLA AYNI pencereyi kullanmali.
+
+    Once yillik getiri 60 gozlemlik oynakliga bolunuyordu: bir yillik
+    getiri uc aylik riske. Standart Sharpe pay ve bolende ayni ornegi
+    kullanir.
+    """
+    fiyatlar = [100.0 * (1.0 + 0.001 * (i % 7)) for i in range(300)]
+    s = [("2026-%02d-%02d" % (1 + i // 28, 1 + i % 28), f)
+         for i, f in enumerate(fiyatlar)]
+    m_ = m.hesapla(s)
+    assert m_["volatilite"] is not None
+    assert m_["yillik_volatilite"] is not None
+    # Iki pencere ayri: degerler genelde farkli olur.
+    assert m_["volatilite"] != m_["yillik_volatilite"]
+
+
+def test_yillik_volatilite_gozlem_yetmezse_none():
+    """252 gozlem yoksa oran hic uretilmemeli — uydurma yerine None."""
+    fiyatlar = [100.0 + i for i in range(80)]
+    s = [("2026-%02d-%02d" % (1 + i // 28, 1 + i % 28), f)
+         for i, f in enumerate(fiyatlar)]
+    m_ = m.hesapla(s)
+    assert m_["volatilite"] is not None      # 60 gozlem yetiyor
+    assert m_["yillik_volatilite"] is None   # 252 yetmiyor

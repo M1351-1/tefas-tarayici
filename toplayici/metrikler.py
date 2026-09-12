@@ -14,6 +14,7 @@ Veri yetmiyorsa None doner - uydurma deger uretilmez.
 from __future__ import annotations
 
 import math
+from datetime import date
 
 # Kac ISLEM GUNU geriye bakilacagi. Takvim gunu degil: fon fiyatlaninca
 # bir gozlem olusur, tatiller zaten seride yoktur.
@@ -25,7 +26,18 @@ PENCERE = {
     "yillik": 252,
 }
 
-VOLATILITE_PENCERE = 60      # gunluk getiri sayisi
+VOLATILITE_PENCERE = 60      # gunluk getiri sayisi (gosterilen "Oynaklik")
+
+# RISK-AYARLI GETIRI ICIN AYRI PENCERE.
+#
+# Sharpe orani pay ve bolende AYNI ornegi kullanir. Once pay 252
+# gozlemlik yillik getiri, bolen 60 gozlemlik oynaklik idi: bir yillik
+# getiri uc aylik riske bolunuyordu. Bu standart bir Sharpe degil,
+# pencereleri karistiran ozel bir orandi.
+#
+# Gosterilen "Oynaklik" sutunu 60 gunde KALIYOR — orasi bilerek guncel
+# riski bildiriyor. Yalnizca risk-ayarli getiri ayni pencereyi kullanir.
+YILLIK_VOLATILITE_PENCERE = 252
 DUSUS_PENCERE = 252          # maks dusus icin bakilan gozlem sayisi
 YIL_ISGUNU = 252
 
@@ -65,14 +77,64 @@ def yilbasindan_getiri(seri):
     return (son_fiyat / baz - 1.0) * 100.0
 
 
-def gunluk_getiriler(seri):
-    """Ardisik gozlemler arasi oransal degisimler (yuzde degil, oran)."""
+AZAMI_BOSLUK_GUN = 10
+
+
+def _gun_farki(a, b):
+    """Iki ISO tarih arasindaki takvim gunu farki.
+
+    TARIH KURULUMU DA try ICINDE OLMALI. Ilk yazimda yalnizca `int()`
+    ayristirmasi sariliydi; `date(2026, 1, 62)` gibi gecersiz bir gun
+    disarida ValueError atip BUTUN toplamayi cokertiyordu. Bozuk bir
+    tarih tek bir fonun olcumunu bozabilir, akisi durduramaz.
+
+    Ayristirilamayan tarihte 0 doner: bosluk BILINMIYOR demektir ve o
+    getiri atlanmaz. Yanlis tarih yuzunden gercek veriyi silmek, bosluk
+    filtresinin amacina aykiri olur.
+    """
+    try:
+        ya, ma, da = (int(p) for p in a.split("-")[:3])
+        yb, mb, db = (int(p) for p in b.split("-")[:3])
+        return date(yb, mb, db).toordinal() - date(ya, ma, da).toordinal()
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
+
+def gunluk_getiriler(seri, azami_bosluk_gun=AZAMI_BOSLUK_GUN):
+    """Ardisik gozlemler arasi oransal degisimler (yuzde degil, oran).
+
+    ARDISIK GOZLEM, ARDISIK GUN DEMEK DEGIL.
+    ========================================
+
+    Once tarihe hic bakilmiyordu: iki ardisik KAYIT arasindaki degisim
+    "gunluk getiri" sayiliyordu. Fiyatlanmayan bir fonun 216 gunluk
+    degisimi tek bir gunluk getiri gibi islenip kok(252) ile
+    yillklandiriliyordu.
+
+    Olculdu (2026-09-11 yayimlanan veri): 60 gunluk pencerede 4 gunden
+    buyuk bosluk olan 17 fon var (2446'da, %0,7) ve bosluklar 216 gune
+    kadar cikiyor. Sonuc: KPS %284,58, PDR %182,58 oynaklik bildiriyordu
+    — butun fonlarda ortanca %6,86 iken. Veri setindeki en yuksek deger
+    %864,65 de buyuk olasilikla ayni artefakt.
+
+    Nadir ama SIDDETLI ve tam olarak sakinlik sutununu bozuyor; o da
+    uygulamanin olculerek guvenilir bulunan tek ekseni.
+
+    Esik neden 10 gun: normal hafta sonu + tatil 4 gune kadar cikar,
+    bayram tatilleri bunu 9 gune tasiyabilir. 10 gunun otesi "fon
+    fiyatlanmamis" demektir; o araligi olceklendirmek yerine ATLIYORUZ.
+    Olceklendirme (1/kok(gun)) bagimsiz artis varsayimi gerektirir ve
+    askiya alinmis bir fon icin bu varsayim savunulamaz.
+    """
     cikti = []
     for i in range(1, len(seri)):
         onceki = seri[i - 1][1]
         simdiki = seri[i][1]
-        if onceki and onceki > 0 and simdiki is not None:
-            cikti.append(simdiki / onceki - 1.0)
+        if not (onceki and onceki > 0 and simdiki is not None):
+            continue
+        if _gun_farki(seri[i - 1][0], seri[i][0]) > azami_bosluk_gun:
+            continue
+        cikti.append(simdiki / onceki - 1.0)
     return cikti
 
 
@@ -142,6 +204,11 @@ def hesapla(seri):
         m[ad + "_getiri"] = getiri(seri, gun)
     m["yilbasindan_getiri"] = yilbasindan_getiri(seri)
     m["volatilite"] = volatilite(seri)
+    # Risk-ayarli getiri PAYLA AYNI pencereyi kullanmali (bkz.
+    # YILLIK_VOLATILITE_PENCERE). Gozlem yetmiyorsa None kalir ve
+    # risk_ayarli da uretilmez — uydurma oran uretmekten iyidir.
+    m["yillik_volatilite"] = volatilite(
+        seri, pencere=YILLIK_VOLATILITE_PENCERE)
     m["maks_dusus"] = maks_dusus(seri)
     m["gozlem_sayisi"] = len(seri)
     m["ilk_tarih"] = seri[0][0] if seri else None

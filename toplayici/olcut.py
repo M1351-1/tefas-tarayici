@@ -270,7 +270,24 @@ def para_piyasasi_olcutu(fonlar):
 
 
 def risk_ayarli(yillik_getiri, oynaklik, olcut):
-    """(yillik - olcut) / oynaklik. Sharpe orani.
+    """(yillik - olcut) / oynaklik — Sharpe benzeri oran.
+
+    PAY VE BOLEN AYNI PENCEREDEN GELMELI.
+    =====================================
+
+    Cagiran taraf bir donem `yillik_getiri`yi 252 gozlemden,
+    `oynaklik`i ise 60 gozlemden veriyordu: bir YILLIK getiri UC AYLIK
+    riske bolunuyordu. Bu standart bir Sharpe orani degil, pencereleri
+    karistiran ozel bir orandi ve fonlar arasinda karsilastirilabilirligi
+    bozuyordu (pencereler fona gore farkli donemleri kapsiyor).
+
+    Artik `metrikler.yillik_volatilite` besleniyor (ayni 252 gozlem).
+    Gozlem yetmiyorsa o alan None kalir ve bu oran hic uretilmez.
+
+    Standart Sharpe ayrica ayni tarihlerdeki DONEMSEL fazla getirilerin
+    ortalamasini kendi standart sapmasina boler; buradaki hesap
+    yillklandirilmis buyuklukler uzerinden calisir ve otokorelasyon
+    varsayimi tasir. Bu yuzden "Sharpe benzeri" deniyor.
 
     None doner: veri eksikse ya da oynaklik anlamli olmayacak kadar
     kucukse (bkz. ASGARI_OYNAKLIK).

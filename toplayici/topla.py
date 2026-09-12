@@ -217,8 +217,12 @@ def olcut_ekle(fonlar, dagilimlar):
 
     # 4) Risk-ayarli getiri (Sharpe), NET degerlerle
     for f in fonlar:
+        # PAY VE BOLEN AYNI PENCEREDEN. Once yillik getiri 60 gunluk
+        # oynakliga bolunuyordu; bu standart bir Sharpe degil,
+        # pencereleri karistiran bir orandi.
         f["risk_ayarli"] = _olcut.risk_ayarli(
-            f.get("net_yillik_getiri"), f.get("volatilite"), net_olcut)
+            f.get("net_yillik_getiri"), f.get("yillik_volatilite"),
+            net_olcut)
 
     return {
         "para_piyasasi_brut": brut,
