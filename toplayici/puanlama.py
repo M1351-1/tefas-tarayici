@@ -59,8 +59,26 @@ RISK_AGIRLIKLARI = {"volatilite": 0.6, "maks_dusus": 0.4}
 # gosterirdi.
 GEREKLI = GETIRI_BILESENLERI + ("volatilite",)
 
-# Risk ekseninde AZ olan "daha sakin"dir: z-skoru ters isaretle girer.
-TERS = {"volatilite", "maks_dusus"}
+# Risk ekseninde z-skoru TERS isaretle girecek metrikler.
+#
+# ISARET TUZAGI — bu kume genisletilirken dikkat. "Riskte az olan
+# sakindir" kurali her metrige ayni sekilde uygulanamaz, cunku metrikler
+# FARKLI ISARETLE saklaniyor:
+#
+#   volatilite  POZITIF saklanir (3,0 gibi). Az olan sakindir  -> TERS.
+#   maks_dusus  NEGATIF saklanir (-5,0 / -80,0). Sifira yakin olan
+#               sakindir, yani BUYUK olan sakindir  -> TERS DEGIL.
+#
+# `maks_dusus` bir donem bu kumedeydi ve sonuc tam tersine donuyordu:
+# -%80 dusmus fon, -%5 dusmusten DAHA SAKIN puanlaniyordu. Olculdu
+# (2026-09-11 yayimlanan veri, 2302 fon): maks dususu -%50'den kotu olan
+# 112 fonun ortalama sakinlik puani +0,065; -%5'ten iyi olan 1169 fonun
+# +0,044. "En sakin 10" listesinde -%80, -%83, -%89 dusmus fonlar vardi.
+#
+# Onemi: bu, uygulamanin OLCULEREK GUVENILIR BULUNAN tek ekseni
+# (siralamanin ileri Spearman'i 0,71) ve agirliginin %40'i ters yone
+# bakiyordu. Gerileme testi: test_puanlama.py::test_maks_dusus_isareti.
+TERS = {"volatilite"}
 
 
 def _ortalama_ve_sapma(degerler):

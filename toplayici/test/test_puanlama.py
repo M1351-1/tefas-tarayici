@@ -240,3 +240,57 @@ def test_eksik_agirlik_yakalanir():
     bozuk["agirliklar"] = {"aylik_getiri": 1.0}
     sorunlar = p.agirlik_kontrolu(bozuk)
     assert any("eksik agirlik" in s for s in sorunlar)
+
+
+def test_maks_dusus_isareti():
+    """GERILEME TESTI — isaret tuzagi.
+
+    `maks_dusus` NEGATIF saklanir (-5,0 / -80,0): sifira yakin olan daha
+    sakindir, yani BUYUK olan sakindir. Bir donem `volatilite` ile ayni
+    kumeye konup ters cevrildi ve sonuc tam tersine dondu: -%80 dusmus
+    fon, -%5 dusmusten DAHA SAKIN puanlandi.
+
+    Olculdu (2026-09-11 yayimlanan veri, 2302 fon): maks dususu -%50'den
+    kotu olan 112 fonun ortalama sakinlik puani +0,065; -%5'ten iyi olan
+    1169 fonun +0,044. "En sakin 10" listesinde -%80, -%83, -%89 dusmus
+    fonlar vardi.
+
+    Onemi: sakinlik, uygulamanin OLCULEREK guvenilir bulunan tek ekseni
+    (ileri Spearman 0,71) ve agirliginin %40'i ters yone bakiyordu.
+    """
+    fonlar = grup(10)
+    for f in fonlar:
+        f["aylik_getiri"] = 10.0
+        f["uc_aylik_getiri"] = 30.0
+        f["haftalik_getiri"] = 2.0
+        f["volatilite"] = 3.0          # oynaklik SABIT: tek degisken dusus
+    fonlar[0]["maks_dusus"] = -5.0     # neredeyse hic dusmemis
+    fonlar[-1]["maks_dusus"] = -80.0   # cokmus
+    puanlanan, _ = p.puanla(fonlar, AYAR)
+    risk = {f["fon_kodu"]: f["risk_puani"] for f in puanlanan}
+    assert risk["F00"] > risk["F09"], (
+        "-%%5 dusen fon (%.4f) -%%80 dusenden (%.4f) daha sakin puanlanmali"
+        % (risk["F00"], risk["F09"]))
+
+
+def test_maks_dusus_tek_basina_sirayi_belirler():
+    """Dusus gercekten AGIRLIK tasiyor mu?
+
+    Ustteki test yalnizca yonu sinar; bu test dususun sirayi kurdugunu
+    dogrular. Oynaklik sabitken sakinlik sirasi dusus sirasiyla ayni
+    olmali. Aksi halde dusus bileseni sessizce etkisiz kalmis olur.
+    """
+    # 10 fon: AYAR'daki asgari kategori buyuklugunun altina inilmemeli,
+    # yoksa kategori tumden puanlanmaz ve test BOS liste uzerinde gecer.
+    fonlar = grup(10)
+    for i, f in enumerate(fonlar):
+        f["aylik_getiri"] = 10.0
+        f["uc_aylik_getiri"] = 30.0
+        f["haftalik_getiri"] = 2.0
+        f["volatilite"] = 3.0
+        f["maks_dusus"] = -5.0 - i * 8.0    # F00 en iyi, F09 en kotu
+    puanlanan, _ = p.puanla(fonlar, AYAR)
+    assert len(puanlanan) == 10, "kategori puanlanmadi; test bir sey sinamiyor"
+    sirali = [f["fon_kodu"] for f in
+              sorted(puanlanan, key=lambda f: -f["risk_puani"])]
+    assert sirali == ["F%02d" % i for i in range(10)], sirali
