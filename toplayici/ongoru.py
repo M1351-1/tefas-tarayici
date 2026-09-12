@@ -111,6 +111,41 @@ def _spearman(cift: list) -> float | None:
     return kov / (sg * sf)
 
 
+def _dilim_ortalamasi(sirali: list, k: float) -> float | None:
+    """Ust dilimin ileri ortalamasi — BERABERLIGE ADIL.
+
+    Once `sirali[:k]` ile kesiliyordu. Python'un siralamasi kararli
+    oldugu icin ESIT gecmis degerine sahip fonlarda dilim uyeligi
+    sozlugun giris sirasina bagli kaliyordu. Sinandi: ayni 20 fon, ayni
+    fiyatlar, yalnizca sozluk sirasi tersine cevrilince ust/alt dilim
+    +%12,5 / -%12,5 iken -%12,5 / +%12,5 oluyor; dilim farki +25 puandan
+    -25 puana donuyordu. Yani rapor edilen sayi veriden degil sozluk
+    sirasindan geliyordu.
+
+    Cozum: sinirda kalan beraberlik grubu KESIRLI AGIRLIKLA girer.
+    Grubun tamami esit muamele gorur, hicbir uyesi giris sirasi yuzunden
+    iceride ya da disarida kalmaz.
+
+    `sirali` gecmis degere gore siralanmis olmali (ust dilim icin
+    azalan, alt dilim icin artan).
+    """
+    if not sirali or k <= 0:
+        return None
+    toplam, kullanilan = 0.0, 0.0
+    i, n = 0, len(sirali)
+    while i < n and kullanilan < k - 1e-12:
+        j = i
+        while j + 1 < n and sirali[j + 1][0] == sirali[i][0]:
+            j += 1
+        grup = sirali[i:j + 1]
+        agirlik = min(1.0, (k - kullanilan) / len(grup))
+        for _, ileri in grup:
+            toplam += ileri * agirlik
+            kullanilan += agirlik
+        i = j + 1
+    return toplam / kullanilan if kullanilan > 0 else None
+
+
 def _getiri(fiyatlar: dict, tarihler: list, i0: int, i1: int) -> float | None:
     t0, t1 = tarihler[i0], tarihler[i1]
     p0, p1 = fiyatlar.get(t0), fiyatlar.get(t1)
@@ -183,10 +218,15 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
                 ro = _spearman(cift)
                 if ro is not None:
                     ro_list.append(ro)
-                sirali = sorted(cift, key=lambda c: -c[0])
                 k = max(1, len(cift) // DILIM)
-                ust_list.append(sum(c[1] for c in sirali[:k]) / k)
-                alt_list.append(sum(c[1] for c in sirali[-k:]) / k)
+                ust = _dilim_ortalamasi(
+                    sorted(cift, key=lambda c: -c[0]), k)
+                alt = _dilim_ortalamasi(
+                    sorted(cift, key=lambda c: c[0]), k)
+                if ust is not None:
+                    ust_list.append(ust)
+                if alt is not None:
+                    alt_list.append(alt)
             if kullanildi:
                 baslangic_sayisi += 1
 
@@ -308,12 +348,26 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
     sonuc = {}
 
     def aylik(f, i0, i1):
+        """{donem_no: getiri} — DONEM NUMARASI KORUNUR.
+
+        Once duz bir liste donuyordu ve eksik donemler listeden
+        DUSUYORDU; ardindan `enumerate` kalanlari 0,1,2... diye yeniden
+        numaraliyordu. Sonuc: bir fonun 2. donemi, akranlarinin 1. donem
+        medyaniyla karsilastirilabiliyordu.
+
+        Sinandi: fiyatlari ayni olan 20 fondan yalnizca birinin ilk
+        gozlemi kaldirildi. Eksik gozlemli fonun istikrar orani 1,0,
+        ayni performanstaki tam verili akraninin 0,0 cikti.
+
+        Artik donem numarasi anahtar olarak tasiniyor; karsilastirma
+        liste pozisyonuyla degil GERCEK DONEMLE yapiliyor.
+        """
         dilim = tarihler[i0:i1]
-        out = []
-        for j in range(21, len(dilim), 21):
+        out = {}
+        for no, j in enumerate(range(21, len(dilim), 21)):
             a, o = dilim[j], dilim[j - 21]
             if a in f and o in f and f[o] > 0:
-                out.append(f[a] / f[o] - 1)
+                out[no] = f[a] / f[o] - 1
         return out
 
     for ufuk in (63, 126):
@@ -326,7 +380,7 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
                 if len(g) < 4:
                     continue
                 gecmisler[fon] = g
-                for j, v in enumerate(g):
+                for j, v in g.items():
                     kat_getiri[kategoriler.get(fon, ("?", "?"))][j].append(v)
 
             medyan = {}
@@ -339,7 +393,7 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
             gruplar = defaultdict(list)
             for fon, g in gecmisler.items():
                 anahtar = kategoriler.get(fon, ("?", "?"))
-                ust = sum(1 for j, v in enumerate(g)
+                ust = sum(1 for j, v in g.items()
                           if medyan[anahtar].get(j) is not None
                           and v > medyan[anahtar][j])
                 oran = ust / len(g)
@@ -355,10 +409,18 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
                 ro = _spearman(cift)
                 if ro is not None:
                     ro_list.append(ro)
-                sirali = sorted(cift, key=lambda c: -c[0])
                 k = max(1, len(cift) // DILIM)
-                ust_list.append(sum(c[1] for c in sirali[:k]) / k)
-                alt_list.append(sum(c[1] for c in sirali[-k:]) / k)
+                # Istikrar orani AZ SAYIDA olasi deger uretir (ornegin
+                # 4 donemde 0, 0,25, 0,5, 0,75, 1) — yani beraberlik
+                # kuraldir, istisna degil. Adil dilim burada kritik.
+                ust = _dilim_ortalamasi(
+                    sorted(cift, key=lambda c: -c[0]), k)
+                alt = _dilim_ortalamasi(
+                    sorted(cift, key=lambda c: c[0]), k)
+                if ust is not None:
+                    ust_list.append(ust)
+                if alt is not None:
+                    alt_list.append(alt)
 
         if ro_list:
             sonuc[ufuk] = {

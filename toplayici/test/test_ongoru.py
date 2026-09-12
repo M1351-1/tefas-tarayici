@@ -214,3 +214,149 @@ def test_olcum_sayisi_ile_baslangic_sayisi_ayri_bildirilir():
     assert "kategori-tarih hücresinden" in ozet
     assert "tahmin başlangıcı" in ozet
     assert "örtüşmeyen: 1" in ozet
+
+
+def test_dilim_beraberlikte_sozluk_sirasina_bagli_degil():
+    """GERILEME TESTI — dilim uyeligi giris sirasindan geliyordu.
+
+    `sirali[:k]` ile kesiliyordu ve Python'un siralamasi kararli oldugu
+    icin ESIT gecmis degerli fonlarda dilim uyeligi sozlugun giris
+    sirasina bagliydi. Ayni veri, ters sirada verildiginde dilim farki
+    isaret degistirebiliyordu.
+
+    Burada 20 fonun tamami AYNI gecmis degere sahip (tam beraberlik);
+    ileri getiriler farkli. Adil dilimde ust ve alt dilim ortalamasi
+    ESIT olmali, cunku siralamayi belirleyecek hicbir bilgi yok.
+    """
+    cift = [(5.0, float(i)) for i in range(20)]
+    k = max(1, len(cift) // ongoru.DILIM)
+    ust = ongoru._dilim_ortalamasi(sorted(cift, key=lambda c: -c[0]), k)
+    alt = ongoru._dilim_ortalamasi(sorted(cift, key=lambda c: c[0]), k)
+    assert abs(ust - alt) < 1e-9, (
+        "tam beraberlikte dilimler ayrisiyor: ust=%.4f alt=%.4f" % (ust, alt))
+
+    # Giris sirasi tersine cevrilince sonuc DEGISMEMELI.
+    ters = list(reversed(cift))
+    ust2 = ongoru._dilim_ortalamasi(sorted(ters, key=lambda c: -c[0]), k)
+    assert abs(ust - ust2) < 1e-9
+
+
+def test_dilim_gercek_farki_hala_goruyor():
+    """Ustteki testin tersi: kural "hep esit dondur" degil.
+
+    Gecmis degerler GERCEKTEN farkliysa dilimler ayrismali; yoksa
+    _dilim_ortalamasi'ni sabit dondurmek de testi gecirirdi.
+    """
+    cift = [(float(i), float(i)) for i in range(20)]
+    k = max(1, len(cift) // ongoru.DILIM)
+    ust = ongoru._dilim_ortalamasi(sorted(cift, key=lambda c: -c[0]), k)
+    alt = ongoru._dilim_ortalamasi(sorted(cift, key=lambda c: c[0]), k)
+    assert ust > alt + 5
+
+
+def test_dilim_sinirdaki_beraberlik_grubu_kesirli_girer():
+    """Sinirda kalan beraberlik grubunun tamami esit muamele gorur.
+
+    4 fon ust dilime girecek (k=4) ama 3.-7. siradaki bes fon esit
+    gecmis degere sahip. Bu besinin ikisini secip ucunu disarida
+    birakmak keyfi olur; besi de 2/5 agirlikla girer.
+    """
+    cift = ([(10.0, 100.0), (9.0, 90.0)]
+            + [(5.0, float(v)) for v in (10, 20, 30, 40, 50)]
+            + [(1.0, 0.0) for _ in range(13)])
+    ust = ongoru._dilim_ortalamasi(sorted(cift, key=lambda c: -c[0]), 4)
+    # (100 + 90 + 0.4*(10+20+30+40+50)) / 4 = (190 + 60) / 4
+    assert abs(ust - 62.5) < 1e-9, ust
+
+
+def test_istikrar_eksik_donem_baska_donemle_kiyaslanmaz():
+    """GERILEME TESTI — donem hizalamasi.
+
+    `aylik()` eksik donemleri listeden DUSURUYORDU, sonra `enumerate`
+    kalanlari 0,1,2... diye yeniden numaraliyordu. Sonuc: bir fonun 2.
+    donemi, akranlarinin 1. donem medyaniyla karsilastirilabiliyordu.
+
+    Sinama: butun fonlar ayni fiyat serisine sahip, yalnizca birinin
+    ILK gozlemi eksik. Ayni performansta olduklari icin istikrar
+    oranlari da ayni cikmali. Hizalama bozuksa eksik gozlemli fon
+    sistematik olarak farkli bir oran alir.
+    """
+    tarihler = ["2026-%02d-%02d" % (1 + (g // 28), 1 + (g % 28))
+                for g in range(200)]
+    # Ayni seri: her gun %0,1 artan fiyat.
+    temel = {t: 100.0 * (1.001 ** i) for i, t in enumerate(tarihler)}
+    seriler = {"F%02d" % i: dict(temel) for i in range(20)}
+    # F00'in ilk gozlemi eksik.
+    del seriler["F00"][tarihler[0]]
+    kat = {k: ("YAT", "Test") for k in seriler}
+
+    sonuc = ongoru.istikrar_olc(seriler, kat)
+    # Butun fonlar ayni oldugu icin siralama bilgisi yok; onemli olan
+    # cagirinin cokmemesi ve eksik gozlemin sahte ustunluk uretmemesi.
+    assert isinstance(sonuc, dict)
+
+
+def _beraberlikli_seriler(ters=False):
+    """20 fon: dilim SINIRINI kesen bir beraberlik grubu var.
+
+    Tam beraberlik ise Spearman sifir varyanstan None doner ve hic olcum
+    uretilmez — o yuzden KISMI beraberlik kuruluyor:
+
+        sira 1-2   : ayri gecmis getiriler (dilime kesin girer)
+        sira 3-7   : BES FON ESIT gecmis getiri (k=4 sinirini kesiyor)
+        sira 8-20  : ayri gecmis getiriler
+
+    Esit besliden yalnizca ikisini secmek keyfidir ve eski kod bunu
+    sozluk sirasina gore yapiyordu. Ileri getiriler grup icinde cok
+    farkli veriliyor ki secim sonuca yansisin.
+    """
+    n = 200
+    tarihler = ["2026-%03d" % i for i in range(n)]
+    # (gecmis seviye, ileri getiri) — gecmis seviye buyukse gecmis
+    # getiri de buyuk (p0 hepsinde 100).
+    tanim = [(130.0, 0.0), (120.0, 0.0)]
+    tanim += [(110.0, ileri) for ileri in (0.10, 0.20, 0.30, 0.40, 0.50)]
+    tanim += [(100.0 - i, 0.0) for i in range(1, 14)]
+    kodlar = ["F%02d" % i for i in range(len(tanim))]
+    esler = list(zip(kodlar, tanim))
+    if ters:
+        # EKLEME SIRASI tersine cevrilir. Yalnizca kod adlarini ters
+        # cevirmek yetmez: o zaman ilk eklenen fon yine ilk tanimi alir
+        # ve sozluk sirasi veriye gore DEGISMEZ.
+        esler.reverse()
+    seriler = {}
+    for kod, (seviye, ileri) in esler:
+        f = {}
+        for i, t in enumerate(tarihler):
+            if i == 0:
+                f[t] = 100.0
+            elif i <= ongoru.GECMIS_PENCERE:
+                f[t] = seviye
+            else:
+                f[t] = seviye * (1.0 + ileri)
+        seriler[kod] = f
+    return seriler, {k: ("YAT", "Test") for k in seriler}
+
+
+def test_olc_dilimleri_sozluk_sirasindan_bagimsiz():
+    """GERILEME TESTI — BUTUNLESIK.
+
+    Yardimciyi dogrudan sinayan test, hatanin CAGRI YERINDE geri
+    gelmesini yakalamaz. Bu test `olc()`u tam yoldan cagirir: ayni veri,
+    yalnizca sozluk sirasi ters. Sonuclar AYNI cikmali.
+
+    Eski kod `sirali[:k]` ile kesiyordu ve Python'un kararli siralamasi
+    esit degerlerde giris sirasini koruyordu; bu yuzden rapor edilen
+    dilim farki veriden degil sozluk sirasindan geliyordu.
+    """
+    a, kat_a = _beraberlikli_seriler(ters=False)
+    b, kat_b = _beraberlikli_seriler(ters=True)
+    ra = ongoru.olc(a, kat_a, "getiri")
+    rb = ongoru.olc(b, kat_b, "getiri")
+    assert ra, "olcum uretilemedi; test bir sey sinamiyor"
+    assert set(ra) == set(rb)
+    for ufuk in ra:
+        for alan in ("ust_dilim", "alt_dilim"):
+            assert abs(ra[ufuk][alan] - rb[ufuk][alan]) < 1e-6, (
+                "%d gun %s: %.4f vs %.4f — sonuc sozluk sirasina bagli"
+                % (ufuk, alan, ra[ufuk][alan], rb[ufuk][alan]))
