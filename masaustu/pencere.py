@@ -52,17 +52,33 @@ from PySide6.QtWidgets import (
 
 from . import grafik, tema, veri
 
+# SUTUN DUZENI — ASIL SUTUNLAR EKRANDA KALMALI.
+#
+# Once "Ad" 230, "Kategori" 150 piksel idi; toplam ~1010 piksel. Saga
+# eklenen detay paneliyle birlikte tablo yatay kaydirmaya dusuyor ve
+# uygulamanin ASIL iki sutunu (Getiri, Sakinlik) varsayilan gorunumde
+# HIC gorunmuyordu. Liste getiri puanina gore sirali aciliyor ama o
+# sutun ekranda olmadigi icin ust satirlarin NEDEN ustte oldugu
+# belirsiz kaliyordu.
+#
+# "Ad" kisaltildi (tam ad detay panelinde ve satir ipucunda duruyor),
+# "Kategori" daraltildi; kazanilan yer puan sutunlarina verildi.
+#
+# ETIKETLER NE OLDUKLARINI SOYLUYOR. "Getiri" tek basina bir KALITE
+# puani gibi okunuyordu. Olculdu: gecmis getiriye gore siralamanin ileri
+# Spearman'i 0,01 ve ust %20 dilim alt %20 dilimin ALTINDA kaliyor —
+# yani bu sutun gelecege dair bilgi tasimiyor, gecmisi TASVIR ediyor.
 SUTUNLAR = [
-    ("kod", "Fon", 70),
-    ("ad", "Ad", 230),
-    ("kategori", "Kategori", 150),
-    ("gunluk", "Günlük", 78),
-    ("aylik", "Aylık", 78),
-    ("uc_aylik", "3 Aylık", 82),
-    ("yillik", "Yıllık", 82),
-    ("volatilite", "Oynaklık", 82),
-    ("getiri_puani", "Getiri", 76),
-    ("risk_puani", "Sakinlik", 82),
+    ("kod", "Fon", 62),
+    ("ad", "Ad", 150),
+    ("kategori", "Kategori", 112),
+    ("gunluk", "Günlük", 70),
+    ("aylik", "Aylık", 70),
+    ("uc_aylik", "3 Aylık", 74),
+    ("yillik", "Yıllık", 74),
+    ("volatilite", "Oynaklık", 76),
+    ("getiri_puani", "Geçmiş getiri", 104),
+    ("risk_puani", "Sakinlik", 84),
 ]
 
 
@@ -74,7 +90,21 @@ class AnaPencere(QMainWindow):
         self.setStyleSheet(tema.STIL)
 
         self.durum = veri.Durum()
-        self._sirala_sutun = "getiri_puani"
+        # VARSAYILAN SIRALAMA: olculen tek KALICI eksen.
+        #
+        # Once `getiri_puani` idi. Uygulama o siralamanin gelecegi
+        # tutmadigini KENDI olcuyor (ileri Spearman 0,01; ust %20 dilim
+        # alt %20 dilimin ALTINDA) ve ekrana yaziyor — ama liste tam o
+        # sutuna gore sirali aciliyordu. Tablo arayuzunde en ust satir
+        # "en iyisi" diye okunur; yanindaki aciklama metni bunu telafi
+        # etmiyor.
+        #
+        # Sakinlik ise kategori icinde olculdugunde kalici (0,71). Ama
+        # bu da "en iyi fon" DEMEK DEGIL: hisse fonunda dusuk oynaklik,
+        # fonun isini yapmamasi da olabilir. O yuzden asil duzeltme
+        # varsayilani degistirmek degil, siralamanin NE OLDUGUNU
+        # gorunur kilmak (bkz. _siralama_etiketi).
+        self._sirala_sutun = "risk_puani"
         self._azalan = True
 
         merkez = QWidget()
@@ -84,6 +114,13 @@ class AnaPencere(QMainWindow):
         d.setSpacing(10)
 
         d.addWidget(self._ust_cubuk())
+        # OLCUM EKRANDA OLMALI.
+        #
+        # Uygulama siralamanin gelecegi tutup tutmadigini HER TOPLAMADA
+        # olcuyor ve sonucu JSON'a yaziyordu — ama ekranda hicbir yerde
+        # gostermiyordu. Kullanici listeyi "en iyiden kotuye" diye
+        # okuyup gidiyordu. Bulgunun degeri, gorunur olmasina bagli.
+        d.addWidget(self._ongoru_seridi())
         d.addWidget(self._suzgec_cubugu())
 
         bolucu = QSplitter(Qt.Orientation.Horizontal)
@@ -121,6 +158,68 @@ class AnaPencere(QMainWindow):
         d.addWidget(self.tazelik)
         return w
 
+    def _ongoru_seridi(self) -> QWidget:
+        """Olculen ongoru gucunu tek satirda, renkle bildirir.
+
+        Metin `veri.Durum.ongoru_gucu` icinden gelir; burada yeniden
+        yorum URETILMEZ. Toplayici ne olctuyse o yazilir.
+        """
+        self.ongoru_kutusu = QWidget()
+        self.ongoru_kutusu.setObjectName("ongoruSerit")
+        d = QVBoxLayout(self.ongoru_kutusu)
+        d.setContentsMargins(12, 9, 12, 9)
+        d.setSpacing(3)
+        self.ongoru_baslik = tema.etiket("", boyut=12, kalin=True, sar=False)
+        self.ongoru_metin = tema.etiket("", boyut=11,
+                                        renk=tema.METIN_SOLUK)
+        d.addWidget(self.ongoru_baslik)
+        d.addWidget(self.ongoru_metin)
+        self.ongoru_kutusu.setVisible(False)
+        return self.ongoru_kutusu
+
+    def _ongoru_seridini_doldur(self) -> None:
+        og = self.durum.ongoru_gucu or {}
+        ozet = (og.get("ozet") or "").strip()
+        if not ozet:
+            self.ongoru_kutusu.setVisible(False)
+            return
+        calisiyor = og.get("durum") == "calisiyor"
+        renk = tema.UYARI if not calisiyor else tema.IYI
+        self.ongoru_baslik.setText(
+            "SIRALAMA SINANDI — geçmiş getiriye göre sıralama geleceği "
+            "tutmuyor" if not calisiyor
+            else "SIRALAMA SINANDI — bir miktar öngörü gücü ölçüldü")
+        self.ongoru_baslik.setStyleSheet("color: %s;" % renk)
+        self.ongoru_metin.setText(ozet)
+        self.ongoru_kutusu.setStyleSheet(
+            "#ongoruSerit { background: %s; border: 1px solid %s; "
+            "border-radius: 8px; }" % (tema.KART, renk))
+        self.ongoru_kutusu.setVisible(True)
+
+
+    # OLCUTUN NE ANLAMA GELDIGI, SIRALAMANIN YANINDA.
+    #
+    # Her olcut icin ayri bir cumle: kullanici "Gecmis getiri"ye gore
+    # siralarsa bunun bir tavsiye olmadigini AYNI ANDA gormeli.
+    SIRALAMA_NOTU = {
+        "risk_puani": "Sakinlik — ölçülen tek kalıcı eksen. "
+                      "“En iyi fon” demek değil: hisse fonunda düşük "
+                      "oynaklık, fonun işini yapmaması da olabilir.",
+        "getiri_puani": "Geçmiş getiri — ölçüldü, geleceği TUTMUYOR. "
+                        "Bu sıralama bir tavsiye değildir.",
+        "volatilite": "Oynaklık — ham ölçüm, akranlarına göre "
+                      "düzeltilmemiştir.",
+    }
+
+    def _siralama_etiketini_yenile(self) -> None:
+        alan = self._sirala_sutun
+        baslik = next((b for a, b, _ in SUTUNLAR if a == alan), alan)
+        yon = "azalan" if self._azalan else "artan"
+        notu = self.SIRALAMA_NOTU.get(alan, "")
+        self.siralama_etiketi.setText(
+            "Sıralama: %s (%s)%s" % (baslik, yon, "  ·  " + notu if notu else ""))
+        self.siralama_etiketi.setToolTip(notu)
+
     def _suzgec_cubugu(self) -> QWidget:
         w = QWidget()
         w.setStyleSheet("background: transparent;")
@@ -149,6 +248,14 @@ class AnaPencere(QMainWindow):
         self.sayac = tema.etiket("", boyut=12, renk=tema.METIN_SOLUK,
                                  sar=False)
         d.addWidget(self.sayac)
+        # SIRALAMA ARTIK ORTULU DEGIL.
+        #
+        # Hangi olcute gore sirali oldugu yazili degildi; kullanici
+        # ustteki satiri "en iyi fon" sanabiliyordu. Simdi olcut ve
+        # "tavsiye degil" uyarisi ayni satirda duruyor.
+        self.siralama_etiketi = tema.etiket("", boyut=11,
+                                            renk=tema.METIN_SOLUK, sar=False)
+        d.addWidget(self.siralama_etiketi)
         return w
 
     def _tablo_kur(self) -> QWidget:
@@ -193,6 +300,14 @@ class AnaPencere(QMainWindow):
     # -------------------------------------------------------------- yukleme
 
     def _yukle(self) -> None:
+        """Diskten okur, sonra ekrani doldurur.
+
+        YUKLEME ILE CIZIM AYRI. Once ikisi tek metottaydi ve bu, arayuzu
+        SINANAMAZ kiliyordu: test bir Durum verip cizimi dogrulamak
+        isteyince metot diski okuyup verdigi durumu eziyordu. Bu
+        projede "derlendi ama ekranda bir sey yok" hatasi iki kez
+        yasandi; tek koruma cizimi gercekten cagiran bir test.
+        """
         self.durum = veri.yukle()
         if self.durum.hata:
             self.durum_cubugu.showMessage("Veri yüklenemedi")
@@ -200,7 +315,10 @@ class AnaPencere(QMainWindow):
             self.detay_duzen.insertWidget(
                 0, tema.not_kutusu(self.durum.hata, tema.UYARI))
             return
+        self._ekrani_doldur()
 
+    def _ekrani_doldur(self) -> None:
+        """`self.durum`u ekrana yazar. Diske DOKUNMAZ."""
         tipler = sorted({(f.get("tip"), f.get("tip_ad"))
                          for f in self.durum.fonlar if f.get("tip")})
         for kod, ad in tipler:
@@ -214,8 +332,19 @@ class AnaPencere(QMainWindow):
             "Veri tarihi: %s   ·   %s fon puanlandı   ·   üretim %s"
             % (self.durum.veri_tarihi, s.get("puanlanan", "?"),
                (self.durum.uretim_zamani or "")[:16].replace("T", " ")))
+        self._ongoru_seridini_doldur()
+        self._siralama_etiketini_yenile()
         self._tabloyu_doldur()
-        self.durum_cubugu.showMessage(self.durum.sorumluluk_notu[:160])
+        # UYARI CUMLESI ORTASINDAN KESILIYORDU.
+        #
+        # `[:160]` ile kirpiliyordu ve ekranda "...gelecek getiriyi
+        # gosterme" diye yarim kaliyordu. Yarim kalan bir sorumluluk
+        # notu, olmamasindan daha kotu: cumlenin nasil bittigini
+        # kullanici tahmin ediyor. Tamami veriliyor; durum cubugu
+        # sigdirmazsa ipucunda tam metin duruyor.
+        not_metni = self.durum.sorumluluk_notu or ""
+        self.durum_cubugu.showMessage(not_metni)
+        self.durum_cubugu.setToolTip(not_metni)
 
     # --------------------------------------------------------------- tablo
 
@@ -231,6 +360,7 @@ class AnaPencere(QMainWindow):
         else:
             self._sirala_sutun = alan
             self._azalan = alan not in ("kod", "ad", "kategori")
+        self._siralama_etiketini_yenile()
         self._tabloyu_doldur()
 
     def _tabloyu_doldur(self) -> None:
