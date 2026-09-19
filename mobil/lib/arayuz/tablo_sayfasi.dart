@@ -59,7 +59,14 @@ class _TabloSayfasiDurumu extends State<TabloSayfasi> {
         _Sutun.aylik => k.fon.getiri.aylik,
         _Sutun.ucAylik => k.fon.getiri.ucAylik,
         _Sutun.yillik => k.fon.getiri.yillik,
-        _Sutun.puan => k.fon.getiriPuani ?? k.puan,
+        // YEREL PUAN ONCE GELIR.
+        //
+        // `k.fon.getiriPuani` YAYIMLANAN puandir; `k.puan` kullanicinin
+        // kendi agirliklariyla yeniden hesaplanmis olandir. Once
+        // yayimlanan seciliyordu: kullanici agirliklari degistirince
+        // SIRALAMA degisiyor ama SUTUNDAKI SAYI eski kaliyordu. Tablo
+        // kendi siralamasini aciklamiyordu.
+        _Sutun.puan => k.puan ?? k.fon.getiriPuani,
         _Sutun.risk => k.fon.riskPuani,
       };
 

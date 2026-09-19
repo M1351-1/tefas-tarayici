@@ -365,3 +365,104 @@ def test_eksik_bilesen_isaretlenir():
     d = {f["fon_kodu"]: f for f in puanlanan}
     assert d["F01"]["risk_eksik_bilesen"] == ["maks_dusus"]
     assert d["F00"]["risk_eksik_bilesen"] == []
+
+
+# ------------------------------------------- gecersiz sayi zinciri (NaN/inf)
+
+NAN = float("nan")
+INF = float("inf")
+
+
+def test_nan_fonu_elenir():
+    """`is None` yetmiyordu.
+
+    NaN "deger var" gibi gecip elemeden kurtuluyor, sonra kategori
+    ortalamasini bozuyordu. Eleme zincirin ilk halkasi.
+    """
+    fonlar = [fon("F%02d" % i, aylik=10.0 + i) for i in range(12)]
+    fonlar[0]["aylik_getiri"] = NAN
+    uygun, elenen = p.ele(fonlar, AYAR)
+    assert [f["fon_kodu"] for f in elenen] == ["F00"]
+    assert "aylik_getiri" in elenen[0]["eleme_nedeni"]
+    assert len(uygun) == 11
+
+
+def test_tek_nan_butun_kategoriyi_bozmaz():
+    """ASIL GERILEME TESTI.
+
+    Olculdu (duzeltme oncesi): 10 fonluk kategoride BIR fonun aylik
+    getirisi NaN yapilinca kalan dokuz fonun aylik z-skoru -1,49..+1,49
+    olmasi gerekirken HEPSI +3,0 cikiyordu. Sebep zincirin ikinci
+    halkasi: kategori ortalamasi ve sapmasi NaN oluyor, `_z` icindeki
+    `sapma <= 0` karsilastirmasi NaN ile False donuyor, bolme yapiliyor
+    ve `min(kirpma, nan)` Python'da `kirpma` donduruyordu.
+
+    Yani tek bir bozuk sayi, bilesenin BUTUN AYIRT EDICILIGINI yok
+    ediyordu — ve bunu sessizce, "herkes en iyi" diyerek yapiyordu.
+
+    Bu testi `_z(nan, 0, 1, 3)` cagirarak yazmak YETMEZ; hata fonun
+    kendi degerinde degil, kategori istatistigindeydi.
+    """
+    fonlar = [fon("F%02d" % i, aylik=10.0 + i) for i in range(12)]
+    fonlar[0]["aylik_getiri"] = NAN
+    uygun, _ = p.ele(fonlar, AYAR)
+    puanlanan, _ = p.puanla(uygun, AYAR)
+
+    zler = sorted(f["getiri_kirilimi"]["aylik_getiri"]["z"]
+                  for f in puanlanan)
+    assert len(zler) == 11
+    assert len(set(zler)) == 11, "z-skorlar ayrisamamis: %r" % (zler,)
+    assert min(zler) < -1.0 and max(zler) > 1.0
+
+
+def test_sonsuz_deger_de_ayni_yoldan_elenir():
+    fonlar = [fon("F%02d" % i, aylik=10.0 + i) for i in range(12)]
+    fonlar[0]["aylik_getiri"] = INF
+    uygun, elenen = p.ele(fonlar, AYAR)
+    assert [f["fon_kodu"] for f in elenen] == ["F00"]
+
+
+def test_gecersiz_maks_dusus_risk_istatistigine_girmez():
+    """`maks_dusus` GEREKLI listesinde degil; eleme onu yakalamaz.
+
+    Bu yuzden gecerlilik kategori istatistiginde de sorulmali, yoksa
+    risk ekseninin tamami tek bir NaN ile duzlesir.
+    """
+    fonlar = [fon("F%02d" % i, aylik=10.0 + i) for i in range(12)]
+    for i, f in enumerate(fonlar):
+        f["maks_dusus"] = -5.0 - i
+    fonlar[0]["maks_dusus"] = NAN
+    uygun, elenen = p.ele(fonlar, AYAR)
+    assert elenen == []
+    puanlanan, _ = p.puanla(uygun, AYAR)
+    d = {f["fon_kodu"]: f for f in puanlanan}
+    # Bozuk fon bileseni kaybeder ama digerleri ayrismaya devam eder.
+    assert d["F00"]["risk_eksik_bilesen"] == ["maks_dusus"]
+    zler = sorted(f["risk_kirilimi"]["maks_dusus"]["z"]
+                  for f in puanlanan if "maks_dusus" in f["risk_kirilimi"])
+    assert len(set(zler)) == len(zler) > 1
+
+
+def test_katkilar_toplami_puana_esit():
+    """Ekrandaki "neden ust sirada" dokumu puani ACIKLAMALI.
+
+    Puan `toplam / kullanilan` olarak donuyordu ama kirilimdeki
+    `katki` ham agirliktan yaziliyordu. Bileseni eksik fonda ikisi
+    tutmuyordu: risk puani 1,4863 iken katkilarinin toplami 0,8918'di.
+    """
+    fonlar = [fon("F%02d" % i, aylik=10.0 + i) for i in range(12)]
+    for i, f in enumerate(fonlar):
+        f["maks_dusus"] = -5.0 - i
+    fonlar[0]["maks_dusus"] = None          # eksik bilesen
+    uygun, _ = p.ele(fonlar, AYAR)
+    puanlanan, _ = p.puanla(uygun, AYAR)
+    for f in puanlanan:
+        for eksen, puan in (("getiri_kirilimi", f["getiri_puani"]),
+                            ("risk_kirilimi", f["risk_puani"])):
+            toplam = sum(v["katki"] for v in f[eksen].values())
+            assert abs(toplam - puan) < 5e-4, (
+                "%s %s: katki toplami %.4f, puan %.4f"
+                % (f["fon_kodu"], eksen, toplam, puan))
+    # Agirliklar da yeniden normalize edilmis olmali.
+    d = {f["fon_kodu"]: f for f in puanlanan}
+    assert abs(d["F00"]["risk_kirilimi"]["volatilite"]["agirlik"] - 1.0) < 1e-9

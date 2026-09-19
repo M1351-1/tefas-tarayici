@@ -229,6 +229,18 @@ class _DetaySayfasiDurumu extends State<DetaySayfasi> {
             const SizedBox(height: 12),
           ],
 
+          // ------------------------------------------ sakinlik kırılımı
+          //
+          // Üretici bu dökümü hesaplıyordu ama JSON'a hiç yazmıyordu:
+          // ekranda Sakinlik puanı vardı, gerekçesi yoktu. Üstelik
+          // maksimum düşüşü hesaplanamayan bir fonun YALNIZ oynaklıktan
+          // üretilmiş puanı, tam veriyle üretilmişle aynı sütunda
+          // işaretsiz duruyordu.
+          if (f.riskPuani != null && f.riskKirilim.isNotEmpty) ...[
+            _SakinlikKirilimi(fon: f),
+            const SizedBox(height: 12),
+          ],
+
           // ---------------------------------------------- puan kırılımı
           if (kayit.puan != null && f.kirilim.isNotEmpty)
             _PuanKirilimi(kayit: kayit, agirliklar: durum.ayarlar.agirliklar)
@@ -395,6 +407,108 @@ class _PuanKirilimi extends StatelessWidget {
   }
 }
 
+/// Sakinlik puanının katkı dökümü.
+///
+/// Getiri ekseninden AYRI bir kart: ikisi iki ayrı bilgi ve ölçülen
+/// öngörü güçleri çok farklı (getiri 0,02; sakinlik 0,67 — kendi
+/// verimizde, üç aylık ileri Spearman).
+///
+/// Ağırlıklar kullanıcıya açık değil: risk ekseni yayımlanan sabit
+/// %60/%40 bileşimidir ve bu bileşim o haliyle ölçülmüştür.
+class _SakinlikKirilimi extends StatelessWidget {
+  final Fon fon;
+
+  const _SakinlikKirilimi({required this.fon});
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    final liste = fon.riskKirilim;
+    final enBuyuk = liste
+        .map((k) => k.katki.abs())
+        .fold<double>(0.01, (a, b) => a > b ? a : b);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Sakinlik neden bu kadar?',
+                    style: tema.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+                if (fon.riskSirasi != null)
+                  Text(
+                    '${fon.riskSirasi}. / ${fon.kategoriFonSayisi ?? "?"}',
+                    style: tema.textTheme.titleSmall
+                        ?.copyWith(color: tema.colorScheme.primary),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Akranlarına göre ne kadar sakin: %60 oynaklık, %40 en büyük '
+              'düşüş. Yüksek olması "daha iyi" demek değil — bir profil. '
+              'Hisse fonunda düşük oynaklık, fonun işini yapmaması da '
+              'olabilir.',
+              style: tema.textTheme.bodySmall,
+            ),
+            if (fon.riskEksik.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tema.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Eksik veri: ${fon.riskEksik.map(_eksikAdi).join(", ")} '
+                  'hesaplanamadı. Puan kalan bileşenden üretildi; tam '
+                  'veriyle hesaplanmış puanlarla aynı güvende değildir.',
+                  style: tema.textTheme.bodySmall
+                      ?.copyWith(color: tema.colorScheme.onErrorContainer),
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            for (final k in liste) ...[
+              _KatkiCubugu(
+                baslik: k.baslik,
+                deger: k.deger,
+                ortalama: k.kategoriOrtalamasi,
+                katki: k.katki,
+                oran: k.katki.abs() / enBuyuk,
+              ),
+              const SizedBox(height: 12),
+            ],
+            const Divider(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Sakinlik puanı',
+                    style: tema.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+                Text(trSayi(fon.riskPuani ?? 0, ondalik: 2),
+                    style: tema.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _eksikAdi(String metrik) => switch (metrik) {
+        'volatilite' => 'oynaklık',
+        'maks_dusus' => 'en büyük düşüş',
+        _ => metrik,
+      };
+}
+
 class _KatkiCubugu extends StatelessWidget {
   final String baslik;
   final double deger;
@@ -480,8 +594,31 @@ class _Olculer extends StatelessWidget {
                   ? '—'
                   : (fon.stopajsiz ? 'yok' : '%${trSayi(fon.stopaj! * 100, ondalik: 1)}'),
               aciklama: fon.stopajGerekce),
-          _Satir('Cebinize giren (yıllık)', trYuzde(net),
+          _Satir(
+              fon.stopajKosullu
+                  ? 'Cebinize giren (yıllık, koşullu)'
+                  : 'Cebinize giren (yıllık)',
+              trYuzde(net),
               renkli: true, deger: net),
+          // MUAFIYET VARSAYIM; KULLANICI BUNU GORMELI.
+          //
+          // Oran son günün portföy dağılımından çıkarılıyor. Kuraldaki
+          // süreklilik ve 1 yıldan uzun elde tutma koşulları bu veriden
+          // doğrulanamaz — ikincisi zaten fonun değil, kişinin işleminin
+          // özelliği. "Stopaj yok" diye kesin yazmak, satışta kesinti
+          // çıkarsa kullanıcıyı hazırlıksız yakalardı.
+          if (fon.stopajKosullu)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Bu sayı stopaj muafiyetinin geçerli olduğunu varsayar. '
+                'Muafiyet, fonun oranı sürekli koruması ve payı 1 yıldan '
+                'uzun elde tutmanız koşuluna bağlı; uygulama ikisini de '
+                'doğrulayamaz.',
+                style: tema.textTheme.bodySmall?.copyWith(
+                    color: tema.colorScheme.onSurfaceVariant),
+              ),
+            ),
 
           if (o != null && o.gecerli) ...[
             const Divider(height: 22),
@@ -507,9 +644,20 @@ class _Olculer extends StatelessWidget {
                         'kalmış.',
               ),
             if (fon.riskAyarli != null)
+              // "SHARPE" DEMIYORUZ.
+              //
+              // Standart Sharpe, aynı tarihlerdeki DÖNEMSEL fazla
+              // getirilerin ortalamasını kendi standart sapmasına böler.
+              // Buradaki hesap yıllıklandırılmış büyüklükler üzerinden
+              // çalışıyor ve otokorelasyon varsayımı taşıyor. Python
+              // tarafı "Sharpe benzeri" diyeli beri burası hâlâ "Sharpe"
+              // yazıyordu; aynı sayıya iki ekranda iki ad vermek, üstelik
+              // birini tanımlı bir ölçüt adı yapmak yanlış.
               _Satir('Birim risk başına', trSayi(fon.riskAyarli!),
-                  aciklama: 'Risksizin üstüne koyduğu getirinin '
-                      'oynaklığa oranı (Sharpe). Yüksek olması iyi.'),
+                  aciklama: 'Risksizin üstüne koyduğu yıllık getirinin '
+                      'yıllık oynaklığa oranı. Sharpe oranına benzer ama '
+                      'aynısı değil: dönemsel fazla getirilerden değil, '
+                      'yıllıklandırılmış sayılardan hesaplanıyor.'),
           ],
 
           if (fon.istikrar != null) ...[

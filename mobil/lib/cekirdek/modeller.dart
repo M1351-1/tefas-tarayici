@@ -41,6 +41,7 @@ class Kirilim {
         'uc_aylik_getiri' => '3 aylık getiri',
         'haftalik_getiri' => 'Haftalık getiri',
         'volatilite' => 'Oynaklık (düşük olması iyi)',
+        'maks_dusus' => 'En büyük düşüş (sıfıra yakın olması iyi)',
         _ => metrik,
       };
 }
@@ -135,7 +136,30 @@ class Fon {
   final double? riskPuani;
   final int? riskSirasi;
   final int? kategoriFonSayisi;
+
+  /// GETIRI ekseninin katkı dökümü (eski adıyla `kirilim`).
   final List<Kirilim> kirilim;
+
+  /// RISK ekseninin katkı dökümü.
+  ///
+  /// Üretici bunu hesaplıyordu ama JSON'a hiç yazmıyordu: uygulamada
+  /// Sakinlik puanı vardı, gerekçesi yoktu.
+  final List<Kirilim> riskKirilim;
+
+  /// Risk puanına GİREMEYEN bileşenler. Boş liste = tam veri.
+  ///
+  /// Puan eksik bileşende yeniden normalize ediliyor; bu ölçeği
+  /// düzeltir ama belirsizliği yok etmez. Yalnız oynaklıktan üretilmiş
+  /// bir puan, tam veriyle üretilmişle aynı sütunda işaretsiz
+  /// karşılaştırılmamalı.
+  final List<String> riskEksik;
+
+  /// Stopaj muafiyeti VARSAYILDI mı (kanıtlanmadı mı)?
+  ///
+  /// Muafiyet son günün portföy dağılımından çıkarılıyor. Kuraldaki
+  /// süreklilik ve 1 yıldan uzun elde tutma koşulları bu veriden
+  /// doğrulanamaz; net getiri kesin sayı gibi gösterilmemeli.
+  final bool stopajKosullu;
   final String? puanlanmamaNedeni;
 
   const Fon({
@@ -168,6 +192,9 @@ class Fon {
     this.riskSirasi,
     this.kategoriFonSayisi,
     this.kirilim = const [],
+    this.riskKirilim = const [],
+    this.riskEksik = const [],
+    this.stopajKosullu = false,
     this.puanlanmamaNedeni,
   });
 
@@ -199,6 +226,12 @@ class Fon {
     }
     liste.sort((a, b) => b.agirlik.compareTo(a.agirlik));
     return liste;
+  }
+
+  /// JSON dizisini dizge listesine çevirir; alan yoksa boş liste.
+  static List<String> _dizgeListesi(dynamic v) {
+    if (v is! List) return const [];
+    return v.whereType<String>().toList(growable: false);
   }
 
   /// [ustunde, toplam] listesini kayda çevirir.
@@ -241,6 +274,9 @@ class Fon {
       riskSirasi: (j['risk_sirasi'] as num?)?.toInt(),
       kategoriFonSayisi: (j['kategori_fon_sayisi'] as num?)?.toInt(),
       kirilim: _kirilimCoz(ham),
+      riskKirilim: _kirilimCoz(_harita(j['risk_kirilim'])),
+      riskEksik: _dizgeListesi(j['risk_eksik']),
+      stopajKosullu: (j['stopaj_kosullu'] as bool?) ?? false,
       puanlanmamaNedeni: j['puanlanmama_nedeni'] as String?,
     );
   }

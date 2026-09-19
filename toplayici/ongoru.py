@@ -47,8 +47,36 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
+import metrikler as _metrikler
+import puanlama as _puanlama
+
+# OLCULEN SEY, YAYIMLANAN SEY OLMALI.
+# ====================================
+#
+# Bu modul bir donem HAM 63 gunluk getiriye gore siralama yapip onu
+# sinadi. Ama uygulamanin ekranda gosterdigi `getiri_puani` o degil:
+# 21/63/5 gunluk getirilerin KATEGORI ICI z-skorlarinin agirlikli
+# bilesimi. Ayni sekilde risk ekseni %60 oynaklik + %40 maksimum dusus
+# bilesimiyken sinama yalnizca ham oynakligi olcuyordu.
+#
+# Yani "0,71 kalici" cumlesi oynakligin kaliciligini gosteriyordu,
+# kullaniciya gosterilen Sakinlik puanini DEGIL. Sinama gecse de
+# gecmese de yanlis seyi sinamis oluyordu.
+#
+# Ustelik iki hesap yolu ayni bozuk girdiyi farkli yorumluyordu.
+# Olculdu: tek sifir fiyat iceren, kalan butun fiyatlari 100 olan 64
+# gozlemde canli `metrikler.volatilite` %0 donerken buradaki ayri
+# kopya %199,97 donuyordu — cunku sifir fiyat ve buyuk tarih boslugu
+# kurallari yalnizca canli yolda vardi.
+#
+# Artik her iki yol da `metrikler` + `puanlama` fonksiyonlarini
+# CAGIRIYOR. Ham olcum de birakildi (`ham_*` anahtarlari) ki ikisi
+# karsilastirilabilsin; ama yayimlanan basliktaki sayi uretimdeki
+# puanin sayisidir.
+
 # Siralamanin dayandigi gecmis pencere (islem gunu). Puanlamadaki en
-# agirlikli getiri bileseni uc aylik oldugu icin 63 gun.
+# uzun getiri bileseni uc aylik oldugu icin 63 gun; 63 gunluk getiri
+# 64 gozlem ister.
 GECMIS_PENCERE = 63
 
 # Hangi ufuklarda sinanacak (islem gunu).
@@ -154,19 +182,108 @@ def _getiri(fiyatlar: dict, tarihler: list, i0: int, i1: int) -> float | None:
     return (p1 / p0 - 1) * 100
 
 
+def _seri(fiyatlar: dict, tarihler: list, i0: int, i1: int) -> list:
+    """(tarih, fiyat) dilimi — `metrikler` fonksiyonlarinin bekledigi bicim."""
+    return [(t, fiyatlar[t]) for t in tarihler[max(0, i0):i1] if t in fiyatlar]
+
+
 def _volatilite(fiyatlar: dict, tarihler: list, i0: int, i1: int):
-    p = [fiyatlar[t] for t in tarihler[i0:i1] if t in fiyatlar]
-    if len(p) < 20:
+    """Oynaklik — UYGULAMADAKI HESABIN AYNISI.
+
+    Burada bir donem ayri bir kopya vardi ve canli yoldaki iki kuraldan
+    ikisi de eksikti: sifir fiyat -%100'luk bir "gunluk getiri" olarak
+    giriyordu, buyuk tarih bosluklari da tek gunluk degisim sayiliyordu.
+
+    Olculdu: tek sifir fiyat iceren 64 gozlemde canli hesap %0, buradaki
+    kopya %199,97 donuyordu. Iki yol AYNI bozuk girdiyi taban tabana zit
+    yorumluyordu; boyle bir sinama uygulamayi degil kendini olcer.
+
+    Artik dogrudan `metrikler.volatilite` cagriliyor. Pencere gecmis
+    dilimin uzunluguna gore kisaltiliyor: geri sinamada 63 gozlemlik
+    dilim var, uretimdeki 60 gunluk pencere tam oturuyor; daha kisa
+    dilimlerde en az 20 getiri araniyor (altinda None).
+    """
+    seri = _seri(fiyatlar, tarihler, i0, i1)
+    g = _metrikler.gunluk_getiriler(seri)
+    if len(g) < 20:
         return None
-    g = [(p[i] / p[i - 1] - 1) for i in range(1, len(p)) if p[i - 1] > 0]
-    if len(g) < 15:
-        return None
-    ort = sum(g) / len(g)
-    var = sum((x - ort) ** 2 for x in g) / len(g)
-    return math.sqrt(var) * math.sqrt(252) * 100
+    pencere = min(_metrikler.VOLATILITE_PENCERE, len(g))
+    return _metrikler.volatilite(seri, pencere=pencere)
 
 
 ISLEVLER = {"getiri": _getiri, "volatilite": _volatilite}
+
+# ------------------------------------------------ uretimdeki puanin aynisi
+
+# Getiri ekseni agirliklari ayarlar.json'dan gelir; modul saf kalsin
+# diye disaridan verilebiliyor, verilmezse uretimdeki varsayilan.
+VARSAYILAN_AGIRLIK = {
+    "aylik_getiri": 0.35, "uc_aylik_getiri": 0.25, "haftalik_getiri": 0.20,
+}
+Z_KIRPMA = 3.0
+
+
+def _uretim_metrikleri(fiyatlar: dict, tarihler: list, i0: int, i1: int):
+    """Bir fonun o andaki metrikleri — `metrikler.hesapla` ile ayni yol."""
+    seri = _seri(fiyatlar, tarihler, i0, i1)
+    if len(seri) < 22:
+        return None
+    m = {
+        "haftalik_getiri": _metrikler.getiri(seri, 5),
+        "aylik_getiri": _metrikler.getiri(seri, 21),
+        "uc_aylik_getiri": _metrikler.getiri(seri, 63),
+        "volatilite": _volatilite(fiyatlar, tarihler, i0, i1),
+        "maks_dusus": _metrikler.maks_dusus(seri, pencere=len(seri)),
+    }
+    return m
+
+
+def _uretim_puanlari(metrik_haritasi: dict, eksen: str,
+                     agirliklar: dict | None = None) -> dict:
+    """Bir KATEGORININ fonlarini uretimdeki puanla puanlar.
+
+    metrik_haritasi: {fon_kodu: metrikler sozlugu}
+    eksen: "getiri" | "risk"
+
+    `puanlama` modulunun kendi `_z`/`gecerli` fonksiyonlarini kullanir;
+    kirpma, ters isaret ve eksik bilesende yeniden normalize etme
+    davranisi uretimle birebir ayni olsun diye kopyalanmadi, cagrildi.
+
+    Doner: {fon_kodu: puan}
+    """
+    if eksen == "getiri":
+        bilesenler = _puanlama.GETIRI_BILESENLERI
+        agirlik_haritasi = agirliklar or VARSAYILAN_AGIRLIK
+    else:
+        bilesenler = _puanlama.RISK_BILESENLERI
+        agirlik_haritasi = _puanlama.RISK_AGIRLIKLARI
+    normalize = sum(agirlik_haritasi.get(m, 0) for m in bilesenler)
+
+    istatistik = {}
+    for metrik in bilesenler:
+        degerler = [m[metrik] for m in metrik_haritasi.values()
+                    if _puanlama.gecerli(m.get(metrik))]
+        if len(degerler) >= 2:
+            istatistik[metrik] = _puanlama._ortalama_ve_sapma(degerler)
+
+    puanlar = {}
+    for kod, m in metrik_haritasi.items():
+        toplam, kullanilan = 0.0, 0.0
+        for metrik in bilesenler:
+            if metrik not in istatistik:
+                continue
+            ort, sapma = istatistik[metrik]
+            z = _puanlama._z(m.get(metrik), ort, sapma, Z_KIRPMA)
+            if z is None:
+                continue
+            if metrik in _puanlama.TERS:
+                z = -z
+            agirlik = agirlik_haritasi.get(metrik, 0) / normalize
+            toplam += agirlik * z
+            kullanilan += agirlik
+        if kullanilan > 0:
+            puanlar[kod] = toplam / kullanilan
+    return puanlar
 
 
 def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
@@ -248,32 +365,166 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
     return sonuc
 
 
+def olc_uretim(seriler: dict, kategoriler: dict, eksen: str = "getiri",
+               agirliklar: dict | None = None) -> dict:
+    """EKRANDAKI PUANIN ongoru gucu.
+
+    `olc()` ham bir buyugu (63 gunluk getiri / oynaklik) siralar. Bu
+    fonksiyon ise uygulamanin GERCEKTEN YAYIMLADIGI puani siralar:
+
+      eksen="getiri" -> `getiri_puani`: 21/63/5 gunluk getirilerin
+                        kategori ici z-skorlarinin agirlikli bilesimi.
+                        Ileri sonuc: gerceklesen ileri getiri (%).
+      eksen="risk"   -> `risk_puani`: %60 oynaklik + %40 maksimum dusus
+                        bilesimi (Sakinlik). Ileri sonuc: AYNI bilesimin
+                        ileri penceredeki degeri — soru "sakin olan sakin
+                        kaliyor mu".
+
+    Ikisi ayni sey degil ve fark onemli: getiri ekseninde ileri sonucun
+    getiri olmasi gerekir (kullanicinin kazandigi sey odur), risk
+    ekseninde ise sorunun kendisi kaliciliktir.
+
+    Doner: `olc()` ile ayni anahtarlar.
+    """
+    tarihler = sorted({t for s in seriler.values() for t in s})
+    sonuc = {}
+    # 63 gunluk getiri 64 gozlem ister.
+    gecmis = GECMIS_PENCERE + 1
+
+    for ufuk in UFUKLAR:
+        ro_list, ust_list, alt_list = [], [], []
+        baslangic_sayisi = 0
+        for ti in range(gecmis, len(tarihler) - ufuk, ADIM):
+            # 1) Her fonun o andaki uretim metrikleri.
+            gecmis_metrik, ileri_metrik, ileri_getiri = {}, {}, {}
+            for fon, fiyatlar in seriler.items():
+                gm = _uretim_metrikleri(fiyatlar, tarihler, ti - gecmis, ti)
+                if gm is None:
+                    continue
+                gecmis_metrik[fon] = gm
+                if eksen == "risk":
+                    im = _uretim_metrikleri(
+                        fiyatlar, tarihler, ti, ti + ufuk)
+                    if im is not None:
+                        ileri_metrik[fon] = im
+                else:
+                    g = _getiri(fiyatlar, tarihler, ti, ti + ufuk)
+                    if g is not None:
+                        ileri_getiri[fon] = g
+
+            # 2) Kategori ici puanlama — uretimdeki fonksiyonlarla.
+            kat_gecmis = defaultdict(dict)
+            for fon, m in gecmis_metrik.items():
+                kat_gecmis[kategoriler.get(fon, ("?", "?"))][fon] = m
+            kat_ileri = defaultdict(dict)
+            for fon, m in ileri_metrik.items():
+                kat_ileri[kategoriler.get(fon, ("?", "?"))][fon] = m
+
+            kullanildi = False
+            for anahtar, grup in kat_gecmis.items():
+                if len(grup) < ASGARI_FON:
+                    continue
+                gecmis_puan = _uretim_puanlari(grup, eksen, agirliklar)
+                if eksen == "risk":
+                    ileri_grup = kat_ileri.get(anahtar) or {}
+                    if len(ileri_grup) < ASGARI_FON:
+                        continue
+                    ileri_puan = _uretim_puanlari(
+                        ileri_grup, eksen, agirliklar)
+                else:
+                    ileri_puan = ileri_getiri
+
+                cift = [(gecmis_puan[f], ileri_puan[f])
+                        for f in gecmis_puan if f in ileri_puan]
+                if len(cift) < ASGARI_FON:
+                    continue
+                kullanildi = True
+
+                ro = _spearman(cift)
+                if ro is not None:
+                    ro_list.append(ro)
+                k = max(1, len(cift) // DILIM)
+                ust = _dilim_ortalamasi(sorted(cift, key=lambda c: -c[0]), k)
+                alt = _dilim_ortalamasi(sorted(cift, key=lambda c: c[0]), k)
+                if ust is not None:
+                    ust_list.append(ust)
+                if alt is not None:
+                    alt_list.append(alt)
+            if kullanildi:
+                baslangic_sayisi += 1
+
+        if not ro_list:
+            continue
+        sonuc[ufuk] = {
+            "spearman": round(sum(ro_list) / len(ro_list), 3),
+            "ust_dilim": round(sum(ust_list) / len(ust_list), 2),
+            "alt_dilim": round(sum(alt_list) / len(alt_list), 2),
+            "olcum_sayisi": len(ro_list),
+            "baslangic_sayisi": baslangic_sayisi,
+            "ortusmeyen_baslangic": max(
+                1, -(-baslangic_sayisi // max(1, -(-ufuk // ADIM)))
+            ) if baslangic_sayisi else 0,
+            # Ileri sonucun BIRIMI. Getiri ekseninde yuzde, risk
+            # ekseninde puan — dilim sayilarini okurken sart.
+            "birim": "yuzde" if eksen != "risk" else "puan",
+        }
+    return sonuc
+
+
 def yorumla(getiri_gucu: dict, vol_gucu: dict,
-            istikrar_gucu: dict | None = None) -> dict:
-    """Olcumleri kullaniciya soylenecek cumleye cevirir."""
-    if not getiri_gucu:
+            istikrar_gucu: dict | None = None,
+            uretim_getiri: dict | None = None,
+            uretim_risk: dict | None = None) -> dict:
+    """Olcumleri kullaniciya soylenecek cumleye cevirir.
+
+    `uretim_getiri` / `uretim_risk` verilirse BASLIK ONLARDAN yazilir:
+    ekranda gosterilen puanin olcumu odur. Ham olcumler (getiri_gucu /
+    vol_gucu) yine JSON'a giriyor ama artik karsilastirma icin.
+    """
+    if not getiri_gucu and not uretim_getiri:
         return {"durum": "olculemedi",
                 "ozet": "Öngörü gücü ölçülemedi (yeterli geçmiş yok)."}
 
     # 3 aylik ufuk temsili alinir: ne cok kisa ne cok uzun.
-    g = getiri_gucu.get(63) or list(getiri_gucu.values())[0]
-    v = (vol_gucu or {}).get(63)
+    ham_g = (getiri_gucu or {}).get(63) or (
+        list(getiri_gucu.values())[0] if getiri_gucu else None)
+    # BASLIK YAYIMLANAN PUANIN OLCUMUDUR; yoksa hama duser.
+    g = (uretim_getiri or {}).get(63) or ham_g
+    v = (uretim_risk or {}).get(63) or (vol_gucu or {}).get(63)
+    uretim_olculdu = bool((uretim_getiri or {}).get(63))
 
     fark = g["ust_dilim"] - g["alt_dilim"]
-    calisiyor = g["spearman"] >= 0.20 and fark > 1.0
+    # TEK BASLANGIC "CALISIYOR" DEMEK ICIN YETMEZ.
+    #
+    # Kosul yalnizca korelasyon ve dilim farkiydi; iki ortusmeyen
+    # baslangici olmayan bir olcum de "calisiyor" diyebiliyordu. Bir
+    # tek donemde gorulen iliski, farkli piyasa rejimlerinde surdugunu
+    # gostermez — oynaklik metninde zaten uygulanan kural burada da
+    # gecerli olmali.
+    yeter = g.get("ortusmeyen_baslangic", 0) >= 2
+    calisiyor = g["spearman"] >= 0.20 and fark > 1.0 and yeter
 
+    hangi = ("uygulamada gösterilen getiri puanına"
+             if uretim_olculdu else "geçmiş getiriye")
     ozet = (
-        "ÖLÇÜLDÜ: geçmiş getiriye göre sıralama geleceği tutmuyor. "
+        "ÖLÇÜLDÜ: %s göre sıralama geleceği tutmuyor. "
         "Üç ay sonrasına bakıldığında üst %%20'lik dilimin getirisi "
         "%%%.1f, alt %%20'lik dilimin %%%.1f — aradaki fark %+.1f puan. "
         "Sıra korelasyonu %.2f (0 = hiç bilgi yok)."
-        % (g["ust_dilim"], g["alt_dilim"], fark, g["spearman"])
+        % (hangi, g["ust_dilim"], g["alt_dilim"], fark, g["spearman"])
     ) if not calisiyor else (
-        "ÖLÇÜLDÜ: geçmiş getiriye göre sıralamanın bir miktar öngörü "
+        "ÖLÇÜLDÜ: %s göre sıralamanın bir miktar öngörü "
         "gücü var. Üst %%20 dilim %%%.1f, alt %%20 dilim %%%.1f getirdi "
         "(sıra korelasyonu %.2f)."
-        % (g["ust_dilim"], g["alt_dilim"], g["spearman"])
+        % (hangi, g["ust_dilim"], g["alt_dilim"], g["spearman"])
     )
+
+    # OLCULEN ILE YAYIMLANAN AYNI MI — acikca soylenir.
+    if uretim_olculdu and ham_g:
+        ozet += (
+            " (Aynı dönemde ham üç aylık getiri sıralamasının korelasyonu "
+            "%.2f; ekrandaki puan bileşik olduğu için ayrı ölçülüyor.)"
+            % ham_g["spearman"])
 
     if v:
         # METIN KENDI SAYISINI KONTROL ETMELI.
@@ -284,27 +535,35 @@ def yorumla(getiri_gucu: dict, vol_gucu: dict,
         # Yani ekrana bastigi sayiyla celisen bir cumle uretiyordu.
         oyn = v["spearman"]
         yeter = v.get("ortusmeyen_baslangic", 0) >= 2
+        # NEYIN KALICI OLDUGU DOGRU ADLANDIRILMALI. Uretim olcumu varsa
+        # sinanan sey ekrandaki SAKINLIK puani (%60 oynaklik + %40
+        # maksimum dusus); yoksa yalnizca ham oynaklik. Ikisini ayni
+        # cumleyle anlatmak, sinanmamis bir bilesim icin kalicilik
+        # iddia etmek olurdu.
+        ad = "SAKİNLİK puanı" if (uretim_risk or {}).get(63) else "OYNAKLIK"
         if oyn >= KALICI_ESIK and yeter:
             ozet += (
-                " Buna karşılık OYNAKLIK kalıcı: sıra korelasyonu %.2f. "
-                "Yani \"bu fon oynak\" demek geleceğe dair gerçek bir "
-                "ifade, \"bu fon geçen ay iyi getirdi\" değil." % oyn)
+                " Buna karşılık %s kalıcı: sıra korelasyonu %.2f. "
+                "Yani \"bu fon sakin\" demek geleceğe dair gerçek bir "
+                "ifade, \"bu fon geçen ay iyi getirdi\" değil."
+                % (ad, oyn))
         elif oyn >= KALICI_ESIK:
             ozet += (
-                " Oynaklıkta sıra korelasyonu %.2f gibi yüksek çıktı ama "
+                " %s için sıra korelasyonu %.2f gibi yüksek çıktı ama "
                 "örtüşmeyen tahmin başlangıcı sayısı %d; bu ilişkinin "
                 "farklı piyasa dönemlerinde de sürdüğü bu veriyle "
-                "gösterilemez." % (oyn, v.get("ortusmeyen_baslangic", 0)))
+                "gösterilemez."
+                % (ad, oyn, v.get("ortusmeyen_baslangic", 0)))
         elif oyn <= -KALICI_ESIK:
             ozet += (
-                " Oynaklıkta sıra korelasyonu %.2f, yani TERS yönlü: "
+                " %s için sıra korelasyonu %.2f, yani TERS yönlü: "
                 "geçmişte sakin olan sonraki dönemde oynak çıkmış. Bu "
                 "beklenmeyen bir sonuç; veri veya ölçüm kontrol "
-                "edilmeli." % oyn)
+                "edilmeli." % (ad, oyn))
         else:
             ozet += (
-                " Oynaklıkta da sıra korelasyonu %.2f; bu veriyle kalıcı "
-                "bir ilişki gösterilemedi." % oyn)
+                " %s için sıra korelasyonu %.2f; bu veriyle kalıcı "
+                "bir ilişki gösterilemedi." % (ad, oyn))
 
     # ISTIKRAR: "duzenli olarak akranlarini gecmek" AYRI bir sorudur ve
     # akilli filtre buna dayaniyor. Olculdu: 3 ayda 0,09 (ust dilim alt
@@ -326,9 +585,15 @@ def yorumla(getiri_gucu: dict, vol_gucu: dict,
     return {
         "durum": "calisiyor" if calisiyor else "calismiyor",
         "ozet": ozet,
-        "getiri": getiri_gucu,
+        # HAM olcumler: 63 gunluk getiri / oynaklik siralamasi. Artik
+        # baslik bunlardan yazilmiyor, karsilastirma icin duruyorlar.
+        "getiri": getiri_gucu or {},
         "volatilite": vol_gucu or {},
         "istikrar": istikrar_gucu or {},
+        # UYGULAMADA GOSTERILEN puanlarin olcumu. Baslik bunlardan
+        # yaziliyor (bkz. olc_uretim).
+        "uretim_getiri": uretim_getiri or {},
+        "uretim_risk": uretim_risk or {},
     }
 
 

@@ -68,6 +68,9 @@ from . import grafik, tema, veri
 # puani gibi okunuyordu. Olculdu: gecmis getiriye gore siralamanin ileri
 # Spearman'i 0,01 ve ust %20 dilim alt %20 dilimin ALTINDA kaliyor —
 # yani bu sutun gelecege dair bilgi tasimiyor, gecmisi TASVIR ediyor.
+# Eksik risk bileseninin okunur adi (tablo ipucunda).
+EKSIK_ADLARI = {"volatilite": "oynaklik", "maks_dusus": "en buyuk dusus"}
+
 SUTUNLAR = [
     ("kod", "Fon", 62),
     ("ad", "Ad", 150),
@@ -400,6 +403,27 @@ class AnaPencere(QMainWindow):
                 renk = self._renk(a, v)
                 if renk:
                     oge.setForeground(QColor(renk))
+                # EKSIK BILESENLI PUAN ISARETLENIR.
+                #
+                # Risk puani, bileseni eksik oldugunda kalan agirliga
+                # yeniden normalize ediliyor. Bu OLCEGI duzeltir ama
+                # BELIRSIZLIGI yok etmez: tek bilesenden uretilmis bir
+                # puan, iki bilesenden uretilmisle ayni sutunda kayitsizca
+                # kiyaslanmamali. Uretici bunu JSON'a yaziyor; ekranda
+                # gorunmuyordu.
+                #
+                # Gercek veride 17 fon boyle (2335'te) ve tam olarak
+                # sifir fiyat / uzun bosluk iceren fonlar — yani en
+                # supheli olanlar.
+                if a == "risk_puani" and f.get("risk_eksik"):
+                    oge.setText(oge.text() + " *")
+                    oge.setToolTip(
+                        "Bu puan eksik veriyle hesaplandi: %s "
+                        "hesaplanamadi. Kalan bilesenden uretildi; tam "
+                        "veriyle hesaplanmis puanlarla ayni guvende "
+                        "degildir."
+                        % ", ".join(EKSIK_ADLARI.get(m, m)
+                                    for m in f["risk_eksik"]))
                 self.tablo.setItem(satir, sutun, oge)
 
         self.sayac.setText("%d fon" % len(liste))

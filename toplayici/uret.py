@@ -15,6 +15,7 @@ yavaslatir; kullanici da zaten 2400 fonun grafigine bakmayacak.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -31,7 +32,34 @@ TR_SAAT = timezone(timedelta(hours=3))
 
 
 def _yuvarla(x, basamak=4):
-    return None if x is None else round(x, basamak)
+    if x is None or not isinstance(x, (int, float)) or not math.isfinite(x):
+        return None
+    return round(x, basamak)
+
+
+def _json_guvenli(nesne):
+    """NaN/Infinity'yi null'a cevirir.
+
+    NEDEN: `json.dump` varsayilan olarak `allow_nan=True` ile calisir ve
+    bir NaN'i **`NaN`** diye yazar. Bu Python'un okudugu bir uzanti;
+    STANDART JSON DEGIL. Dart'in `jsonDecode`'u bu belirtece dusunce
+    FormatException atar — yani tek bir bozuk sayi, telefondaki
+    uygulamanin butun fon listesini hic acamamasina yol acar.
+
+    Iki katmanli koruma: burada temizlenir, yazimda `allow_nan=False`
+    verilir. Temizlik bir sey kacirirsa yazim SESSIZ GECMEZ, hata verir
+    — bozuk dosya yayimlamaktansa toplama basarisiz olsun.
+
+    Yayimlanan veride bugun NaN yok; bu koruma gelecekteki bir bozuk
+    girdinin sessizce telefona ulasmasini engelliyor.
+    """
+    if isinstance(nesne, float):
+        return nesne if math.isfinite(nesne) else None
+    if isinstance(nesne, dict):
+        return {a: _json_guvenli(d) for a, d in nesne.items()}
+    if isinstance(nesne, (list, tuple)):
+        return [_json_guvenli(d) for d in nesne]
+    return nesne
 
 
 def fon_kaydi(f):
@@ -68,6 +96,9 @@ def fon_kaydi(f):
         "net_yillik": _yuvarla(f.get("net_yillik_getiri"), 2),
         "stopaj": f.get("stopaj"),
         "stopaj_gerekce": f.get("stopaj_gerekce"),
+        # True = muafiyet VARSAYILDI, kanitlanmadi (sureklilik + 1 yil
+        # elde tutma kosullari bu veriden dogrulanamiyor).
+        "stopaj_kosullu": bool(f.get("stopaj_kosullu")),
         "yerli_hisse": _yuvarla(f.get("yerli_hisse"), 1),
         # (net yillik - net olcut) / oynaklik. Sharpe orani.
         "risk_ayarli": _yuvarla(f.get("risk_ayarli"), 3),
@@ -88,7 +119,19 @@ def fon_kaydi(f):
         "risk_puani": f.get("risk_puani"),
         "risk_sirasi": f.get("risk_sirasi"),
         "kategori_fon_sayisi": f.get("kategori_fon_sayisi"),
+        # `kirilim` GETIRI ekseninin dokumudur (eski ad, mobil okuyor).
         "kirilim": f.get("puan_kirilimi"),
+        # RISK EKSENININ DOKUMU DE DISARI YAZILMALI.
+        #
+        # Eksen ayrildiginda `risk_kirilimi` ve `risk_eksik_bilesen`
+        # uretilmeye baslandi ama JSON'a hic girmedi. Sonuc: uygulamada
+        # risk puani vardi, gerekcesi yoktu — ve daha kotusu, maksimum
+        # dususu hesaplanamayan bir fonun YALNIZ OYNAKLIKTAN uretilmis
+        # puani, tam veriyle hesaplanmis puanla ayni sutunda ayirt
+        # edilmeden kiyaslaniyordu.
+        "risk_kirilim": f.get("risk_kirilimi"),
+        # Bos liste = tam veri. Doluysa arayuz puani isaretlemeli.
+        "risk_eksik": f.get("risk_eksik_bilesen") or [],
         "puanlanmama_nedeni": f.get("puanlanmama_nedeni"),
     }
 
@@ -172,7 +215,8 @@ def ozet_yaz(yol, puanlanan, puanlanmayan, elenen, ayarlar, veri_tarihi,
     }
 
     with open(yol, "w", encoding="utf-8") as d:
-        json.dump(icerik, d, ensure_ascii=False, separators=(",", ":"))
+        json.dump(_json_guvenli(icerik), d, ensure_ascii=False,
+                  separators=(",", ":"), allow_nan=False)
     return yol.stat().st_size
 
 
@@ -214,7 +258,8 @@ def gecmis_yaz(klasor, seriler, kodlar, gun_siniri=None, dagilimlar=None):
                 {"kod": a, "ad": e, "yuzde": round(y, 2)} for a, e, y in ozet]
         d_yol = klasor / (kod + ".json")
         with open(d_yol, "w", encoding="utf-8") as d:
-            json.dump(icerik, d, ensure_ascii=False, separators=(",", ":"))
+            json.dump(_json_guvenli(icerik), d, ensure_ascii=False,
+                  separators=(",", ":"), allow_nan=False)
         adet += 1
         boyut += d_yol.stat().st_size
     return adet, boyut

@@ -258,10 +258,18 @@ SecimSonucu sec(List<Fon> fonlar, Profil profil,
 
   // Vadeye uygun ağırlıklarla yeniden puanla.
   final agirliklar = profil.vade.agirliklar;
-  final puanli = uygun
-      .map((f) => (fon: f, puan: puanHesapla(f, agirliklar) ?? 0.0))
-      .toList()
-    ..sort((a, b) => b.puan.compareTo(a.puan));
+  // BIRLESIK PUAN: getiri ekseni + Sakinlik ekseni.
+  //
+  // Once yalnizca `puanHesapla` cagriliyordu; vadenin oynaklik agirligi
+  // (kisa %25, uzun %30) JSON'da eslesen bir kirilim bulamadigi icin
+  // HICBIR ISE YARAMIYORDU. Ustelik puani olmayan fon `?? 0.0` ile
+  // listenin ortasina yerlesiyordu.
+  final puanli = <({Fon fon, double puan})>[];
+  for (final f in uygun) {
+    final p = birlesikPuan(f, agirliklar);
+    if (p != null) puanli.add((fon: f, puan: p));
+  }
+  puanli.sort((a, b) => b.puan.compareTo(a.puan));
 
   final adaylar = <Aday>[];
   for (var i = 0; i < puanli.length && i < adet; i++) {
@@ -315,7 +323,17 @@ List<String> _gerekceler(Fon f, Map<String, double> agirliklar, Olcut? olcut) {
     }
   }
   if (f.stopajsiz) {
-    liste.add('hisse yoğun fon: stopaj yok, brüt getirisi cebinize giriyor');
+    // KOSULLU BIR MUAFIYET KESIN DIYE YAZILAMAZ.
+    //
+    // Once "stopaj yok, brüt getirisi cebinize giriyor" deniyordu. Oysa
+    // muafiyet SON GUNUN portfoy dagilimindan cikariliyor; kuraldaki
+    // sureklilik ve 1 yildan uzun elde tutma kosullari bu veriden
+    // dogrulanamaz. Ikincisi zaten fonun degil KISININ isleminin
+    // ozelligi — uygulama kullanicinin ne zaman alacagini bilmiyor.
+    liste.add(f.stopajKosullu
+        ? 'hisse yoğun fon: koşullar sağlanırsa stopaj %0 '
+            '(1 yıldan uzun tutmak gerekir)'
+        : 'hisse yoğun fon: stopaj yok');
   }
   final k = katkilar(f, agirliklar);
   for (final e in k.take(2)) {

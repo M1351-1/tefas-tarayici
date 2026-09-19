@@ -36,6 +36,10 @@ Map<String, dynamic> fonJson({
   int? gozlem = 250,
   int? kategoriFonSayisi = 40,
   bool kirilimVar = true,
+  double? riskPuani = 0.6,
+  int? riskSirasi = 3,
+  List<String> riskEksik = const [],
+  bool stopajKosullu = false,
 }) =>
     {
       'kod': kod,
@@ -86,15 +90,38 @@ Map<String, dynamic> fonJson({
                 'agirlik': 0.20,
                 'katki': 0.10,
               },
+            }
+          : null,
+      // FIKSTUR URETICIYI TAKLIT ETMELI.
+      //
+      // `kirilim` icinde bir zamanlar `volatilite` de vardi ve testler
+      // bu yuzden GECIYORDU: uretici eksenleri ayirdiktan sonra oraya
+      // artik yalnizca getiri bilesenleri yaziliyor. Gercekte olmayan
+      // bir alani fiksture koymak, mobil puanin ureticininkinin 0,8
+      // kati cikmasini ve oynaklik agirliginin olu olmasini gizledi.
+      // Oynaklik artik ait oldugu yerde: `risk_kirilim`.
+      'risk_puani': riskPuani,
+      'risk_sirasi': riskSirasi,
+      'risk_kirilim': kirilimVar
+          ? {
               'volatilite': {
                 'deger': volatilite,
                 'kategori_ortalamasi': 25.0,
                 'z': 0.6,
-                'agirlik': 0.20,
-                'katki': 0.12,
+                'agirlik': 0.6,
+                'katki': 0.36,
+              },
+              'maks_dusus': {
+                'deger': maksDusus,
+                'kategori_ortalamasi': -20.0,
+                'z': 0.6,
+                'agirlik': 0.4,
+                'katki': 0.24,
               },
             }
           : null,
+      'risk_eksik': riskEksik,
+      'stopaj_kosullu': stopajKosullu,
     };
 
 void main() {
@@ -105,7 +132,10 @@ void main() {
       expect(f.getiri.aylik, 12.5);
       expect(f.volatilite, 20);
       expect(f.puanlandi, isTrue);
-      expect(f.kirilim.length, 4);
+      // UC bilesen: getiri ekseni. Oynaklik ayri eksende ve ayri alanda
+      // (risk_kirilim); burada 4 beklemek eski sozlesmeydi.
+      expect(f.kirilim.length, 3);
+      expect(f.riskKirilim.length, 2);
     });
 
     test('eksik alanlar çökertmez', () {
@@ -184,7 +214,18 @@ void main() {
   });
 
   group('Yeniden puanlama', () {
-    test('varsayılan ağırlıkla toplayıcının puanına yakın çıkar', () {
+    test('varsayılan ağırlıkla toplayıcının puanının AYNISI çıkar', () {
+      // ASIL GERİLEME TESTİ.
+      //
+      // Bu test 0,77 bekliyordu ve GEÇİYORDU — ama yalnızca fikstürde
+      // üreticinin artık yazmadığı bir `volatilite` kırılımı olduğu
+      // için. Gerçek veride mobil puan üreticininkinin 0,8 KATI
+      // çıkıyordu (üretici 1,4863 iken mobil 1,18904), çünkü ağırlıklar
+      // kullanılan toplama bölünmüyordu.
+      //
+      // Üreticinin hesabı: ağırlıklar kendi içinde normalize edilir
+      // (0,35+0,25+0,20 = 0,80), sonra kullanılan ağırlığa bölünür:
+      //   (0,4375*1,0 + 0,3125*0,8 + 0,25*0,5) / 1,0 = 0,8125
       final f = Fon.jsondan(fonJson());
       final p = puanHesapla(f, const {
         'aylik_getiri': 0.35,
@@ -192,17 +233,53 @@ void main() {
         'haftalik_getiri': 0.20,
         'volatilite': 0.20,
       });
-      // 0.35*1.0 + 0.25*0.8 + 0.20*0.5 + 0.20*0.6 = 0.77
-      expect(p, closeTo(0.77, 1e-9));
+      expect(p, closeTo(0.8125, 1e-9));
     });
 
     test('ağırlık değişince puan değişir', () {
       final f = Fon.jsondan(fonJson());
       final a = puanHesapla(f, const {'aylik_getiri': 1.0});
-      final b = puanHesapla(f, const {'volatilite': 1.0});
+      final b = puanHesapla(f, const {'haftalik_getiri': 1.0});
       expect(a, closeTo(1.0, 1e-9));
-      expect(b, closeTo(0.6, 1e-9));
+      expect(b, closeTo(0.5, 1e-9));
       expect(a, isNot(b));
+    });
+
+    test('yalnız oynaklık ağırlığı getiri puanı üretmez', () {
+      // Oynaklık artık GETİRİ ekseninde değil. Önce 0,0 dönüyordu ve bu
+      // "ortalama bir fon" gibi okunuyordu; doğrusu "bu eksende
+      // ölçülemedi".
+      final f = Fon.jsondan(fonJson());
+      expect(puanHesapla(f, const {'volatilite': 1.0}), isNull);
+    });
+
+    test('oynaklık ağırlığı artık Sakinlik eksenine uygulanır', () {
+      // ÖLÜ KAYDIRICI. Kullanıcı ayarlarda "Düşük oynaklık" ağırlığını
+      // sonuna kadar açsa bile hiçbir şey değişmiyordu: JSON'da eşleşen
+      // kırılım yoktu. Tercih artık yayımlanan Sakinlik puanına gidiyor.
+      final f = Fon.jsondan(fonJson(riskPuani: 0.9));
+      expect(birlesikPuan(f, const {'volatilite': 1.0}), closeTo(0.9, 1e-9));
+      final yari = birlesikPuan(f, const {
+        'aylik_getiri': 0.35 / 0.8 * 0.5,
+        'uc_aylik_getiri': 0.25 / 0.8 * 0.5,
+        'haftalik_getiri': 0.20 / 0.8 * 0.5,
+        'volatilite': 0.5,
+      });
+      expect(yari, closeTo(0.5 * 0.8125 + 0.5 * 0.9, 1e-9));
+    });
+
+    test('katkılar toplamı puana eşittir', () {
+      // Döküm puanı AÇIKLAMALI. Normalizasyon puana uygulanıp
+      // katkılara uygulanmadığında çubuklar toplamı puanı tutmuyordu.
+      final f = Fon.jsondan(fonJson());
+      const a = {
+        'aylik_getiri': 0.35,
+        'uc_aylik_getiri': 0.25,
+        'haftalik_getiri': 0.20,
+        'volatilite': 0.20,
+      };
+      final toplam = katkilar(f, a).fold<double>(0, (t, e) => t + e.katki);
+      expect(toplam, closeTo(puanHesapla(f, a)!, 1e-9));
     });
 
     test('kırılımı olmayan fon puanlanmaz', () {
@@ -503,6 +580,43 @@ void olcuTestleri() {
       expect(f.stopaj, isNull);
       expect(f.stopajsiz, isFalse);
       expect(f.istikrar, isNull);
+    });
+
+    test('koşullu muafiyet işareti taşınır', () {
+      // Muafiyet son günün portföy dağılımından çıkarılıyor; süreklilik
+      // ve 1 yıldan uzun elde tutma doğrulanamıyor. Arayüz net getiriyi
+      // kesin sayı gibi göstermemeli.
+      final j = zenginFon();
+      j['stopaj_kosullu'] = true;
+      expect(Fon.jsondan(j).stopajKosullu, isTrue);
+      expect(Fon.jsondan(zenginFon()).stopajKosullu, isFalse);
+    });
+  });
+
+  group('Risk ekseni kırılımı', () {
+    test('çözümlenir', () {
+      // Üretici hesaplıyordu ama JSON'a hiç yazmıyordu: ekranda Sakinlik
+      // puanı vardı, gerekçesi yoktu.
+      final f = Fon.jsondan(fonJson());
+      expect(f.riskPuani, 0.6);
+      expect(f.riskKirilim.length, 2);
+      expect(f.riskKirilim.map((k) => k.metrik),
+          containsAll(<String>['volatilite', 'maks_dusus']));
+      expect(f.riskEksik, isEmpty);
+    });
+
+    test('eksik bileşen listesi taşınır', () {
+      // Yalnız oynaklıktan üretilmiş bir puan, tam veriyle üretilmişle
+      // aynı sütunda işaretsiz karşılaştırılmamalı.
+      final f = Fon.jsondan(fonJson(riskEksik: const ['maks_dusus']));
+      expect(f.riskEksik, ['maks_dusus']);
+    });
+
+    test('alan yoksa boş liste döner, çökmez', () {
+      final f = Fon.jsondan({'kod': 'X', 'getiri': {}});
+      expect(f.riskKirilim, isEmpty);
+      expect(f.riskEksik, isEmpty);
+      expect(f.stopajKosullu, isFalse);
     });
   });
 

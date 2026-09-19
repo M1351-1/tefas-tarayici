@@ -66,7 +66,16 @@ def _durum():
             "getiri_sirasi": i + 1,
             "risk_puani": 1.5 - i * 0.1,
             "risk_sirasi": i + 1,
-            "risk_eksik_bilesen": [] if i else ["maks_dusus"],
+            # URETICININ YAZDIGI ANAHTAR `risk_eksik`; `risk_eksik_bilesen`
+            # yalnizca Python ic yapisinda var ve JSON'a hic girmiyor.
+            # Fikstur ic adi kullandigi surece ekrandaki isaret hic
+            # sinanmamis oluyordu.
+            "risk_eksik": [] if i else ["maks_dusus"],
+            "risk_kirilim": {
+                "volatilite": {"deger": 5.0 + i, "kategori_ortalamasi": 12.0,
+                               "z": 0.5, "agirlik": 1.0 if not i else 0.6,
+                               "katki": 0.5},
+            },
             "istikrar": [9, 12],
             "kategori_fon_sayisi": 12,
             "puanlanmama_nedeni": None,
@@ -174,6 +183,26 @@ class PencereCizimTesti(unittest.TestCase):
         tam = p.durum.sorumluluk_notu
         self.assertTrue(tam.endswith("göstermez."))
         self.assertEqual(p.durum_cubugu.toolTip(), tam)
+
+    def test_eksik_risk_bileseni_tabloda_isaretlenir(self):
+        """Eksik veriyle uretilmis puan, tam puanla ayni gorunmemeli.
+
+        Uretici `risk_eksik` yaziyordu ama ekranda hicbir iz yoktu:
+        yalniz oynakliktan hesaplanmis bir Sakinlik puani, iki
+        bilesenden hesaplanmisla ayni sutunda ayirt edilemiyordu.
+        Gercek veride 17 fon boyle ve hepsi sifir fiyat / uzun bosluk
+        iceren fonlar.
+        """
+        p = self._pencere()
+        isaretli = 0
+        for satir in range(p.tablo.rowCount()):
+            sutun = [a for a, _, _ in pencere_modulu.SUTUNLAR].index(
+                "risk_puani")
+            oge = p.tablo.item(satir, sutun)
+            if oge and oge.text().endswith("*"):
+                isaretli += 1
+                self.assertIn("eksik veriyle", oge.toolTip())
+        self.assertEqual(isaretli, 1, "eksik bilesenli fon isaretlenmemis")
 
     def test_bos_durumla_cokmez(self):
         p = pencere_modulu.AnaPencere()

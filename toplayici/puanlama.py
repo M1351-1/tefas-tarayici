@@ -81,6 +81,30 @@ GEREKLI = GETIRI_BILESENLERI + ("volatilite",)
 TERS = {"volatilite"}
 
 
+def gecerli(x):
+    """Sayi puanlamaya girebilir mi.
+
+    `is not None` YETMEZ. NaN ve sonsuz da "deger var" gibi gecer ve
+    bulastiklari her yeri bozar:
+
+      * `ele()` fonu elemez,
+      * kategori ortalamasi ve sapmasi NaN olur,
+      * `_z` icinde `sapma <= 0` karsilastirmasi NaN ile False dondugu
+        icin bolme yapilir ve `min(kirpma, nan)` Python'da `kirpma`
+        dondurur — yani KATEGORIDEKI HERKES +kirpma alir.
+
+    Olculdu (10 fonluk kategori, birinin aylik getirisi NaN): kalan
+    dokuz fonun aylik z-skoru sirasiyla -1,49..+1,49 olmasi gerekirken
+    HEPSI +3,0 cikti. Bilesen tumuyle bilgisizlesti; fonun kendi
+    degerinin bozuk olmasi yetmiyor, TEK bir bozuk sayi butun
+    kategoriyi ayni puana esitliyor.
+
+    Bu yuzden gecerlilik tek noktada degil, zincirin her halkasinda
+    (eleme -> kategori istatistigi -> z -> JSON yazimi) sorulur.
+    """
+    return x is not None and isinstance(x, (int, float)) and math.isfinite(x)
+
+
 def _ortalama_ve_sapma(degerler):
     n = len(degerler)
     if n < 2:
@@ -106,9 +130,12 @@ def _z(x, ort, sapma, kirpma):
     `_z(nan, 0, 1, 3)` = **+3**. Bozuk veriyle gelen bir fon, kategorisinin
     en iyisi gibi puanlaniyordu.
 
-    Artik None donuyor; cagiran taraf bileseni yok sayar.
+    KATEGORI ISTATISTIGI DE DENETLENIR. Once yalnizca `x` bakiliyordu;
+    ama `ort`/`sapma` NaN ise `sapma <= 0` False donuyor ve bolme
+    yapiliyordu. Bu durumda fonun kendi degeri saglam olsa bile z
+    anlamsizdir — bileseni hic saymamak dogrusu.
     """
-    if x is None or not math.isfinite(x):
+    if not gecerli(x) or not gecerli(ort) or not gecerli(sapma):
         return None
     if sapma <= 0:
         return 0.0
@@ -129,8 +156,11 @@ def ele(fonlar, ayarlar):
         if f.get("gozlem_sayisi", 0) < asgari_gecmis:
             neden = "yeterli gecmis yok (%d gun, en az %d gerekli)" % (
                 f.get("gozlem_sayisi", 0), asgari_gecmis)
-        elif any(f.get(m) is None for m in GEREKLI):
-            eksik = [m for m in GEREKLI if f.get(m) is None]
+        elif any(not gecerli(f.get(m)) for m in GEREKLI):
+            # `is None` degil `gecerli` — NaN/sonsuz da hesaplanamamis
+            # sayilir, yoksa fon elenmeden gecip kategori istatistigini
+            # bozuyor (bkz. gecerli()).
+            eksik = [m for m in GEREKLI if not gecerli(f.get(m))]
             neden = "metrik hesaplanamadi: " + ", ".join(eksik)
         elif f.get("portfoy_buyukluk") is None:
             neden = "fon buyuklugu bilinmiyor"
@@ -182,7 +212,10 @@ def puanla(fonlar, ayarlar):
         # Her eksen KENDI istatistigiyle olculur.
         istatistik = {}
         for metrik in set(GETIRI_BILESENLERI) | set(RISK_BILESENLERI):
-            degerler = [f[metrik] for f in grup if f.get(metrik) is not None]
+            # GECERSIZ SAYI KATEGORI ISTATISTIGINE GIRMEMELI. Tek bir
+            # NaN ortalamayi ve sapmayi NaN yapar; sonrasinda kategorinin
+            # butun fonlari ayni z'yi alir.
+            degerler = [f[metrik] for f in grup if gecerli(f.get(metrik))]
             if len(degerler) >= 2:
                 istatistik[metrik] = _ortalama_ve_sapma(degerler)
 
@@ -213,10 +246,10 @@ def puanla(fonlar, ayarlar):
                 Ayrica `_z` gecersiz sayida None donuyor; o bilesen hic
                 sayilmaz (once NaN en yuksek puani aliyordu).
                 """
-                toplam, kirilim, kullanilan = 0.0, {}, 0.0
+                toplam, ham_kirilim, kullanilan = 0.0, {}, 0.0
                 for metrik in bilesenler:
                     deger = f.get(metrik)
-                    if deger is None or metrik not in istatistik:
+                    if not gecerli(deger) or metrik not in istatistik:
                         continue
                     ort, sapma = istatistik[metrik]
                     z = _z(deger, ort, sapma, kirpma)
@@ -226,18 +259,35 @@ def puanla(fonlar, ayarlar):
                         z = -z
                     ham = agirlik_haritasi.get(metrik, 0)
                     agirlik = (ham / normalize) if normalize else 0.0
-                    katki = agirlik * z
-                    toplam += katki
+                    toplam += agirlik * z
                     kullanilan += agirlik
-                    kirilim[metrik] = {
+                    ham_kirilim[metrik] = (deger, ort, z, agirlik)
+                if kullanilan <= 0:
+                    return None, {}
+
+                # KATKILAR DA YENIDEN NORMALIZE EDILMELI.
+                #
+                # Puan `toplam / kullanilan` olarak doner ama kirilimdeki
+                # `agirlik`/`katki` ham agirliktan yaziliyordu. Bileseni
+                # eksik bir fonda ikisi tutmuyordu: maksimum dususu
+                # olmayan bir fonun risk puani 1,4863 iken katkilarinin
+                # toplami 0,8918 idi (0,6 agirlikla). Ekranda "neden ust
+                # sirada" dokumu puani aciklamiyordu.
+                #
+                # Artik bolen katkilara da uygulaniyor; butun bilesenler
+                # varken `kullanilan` 1,0 oldugu icin tam kayitlarda
+                # hicbir sey degismez.
+                kirilim = {
+                    metrik: {
                         "deger": round(deger, 4),
                         "kategori_ortalamasi": round(ort, 4),
                         "z": round(z, 4),
-                        "agirlik": round(agirlik, 4),
-                        "katki": round(katki, 4),
+                        "agirlik": round(agirlik / kullanilan, 4),
+                        "katki": round(agirlik * z / kullanilan, 4),
                     }
-                if kullanilan <= 0:
-                    return None, {}
+                    for metrik, (deger, ort, z, agirlik)
+                    in ham_kirilim.items()
+                }
                 return round(toplam / kullanilan, 4), kirilim
 
             getiri_puani, getiri_kirilimi = eksen(

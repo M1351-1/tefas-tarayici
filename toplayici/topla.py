@@ -195,10 +195,16 @@ def olcut_ekle(fonlar, dagilimlar):
     # 2) Stopaj - fon adina degil PORTFOYE bakarak
     muaf = 0
     for f in fonlar:
-        oran, gerekce, yerli = _olcut.stopaj_orani(dagilimlar.get(f["fon_kodu"]))
+        oran, gerekce, yerli, kosullu = _olcut.stopaj_orani(
+            dagilimlar.get(f["fon_kodu"]))
         f["stopaj"] = oran
         f["stopaj_gerekce"] = gerekce
         f["yerli_hisse"] = yerli
+        # Muafiyet tek gunluk dagilim fotografindan cikariliyor; sureklilik
+        # ve 1 yillik elde tutma kosullari dogrulanamiyor (bkz.
+        # olcut.STOPAJ_KOSULLARI). Arayuz net getiriyi kesin diye
+        # gostermesin diye isaret disari tasiniyor.
+        f["stopaj_kosullu"] = kosullu
         f["net_yillik_getiri"] = _olcut.net_getiri(f.get("yillik_getiri"), oran)
         if oran == 0.0:
             muaf += 1
@@ -288,10 +294,19 @@ def hesapla_ve_yaz(depo, ayarlar):
         fiyat_haritasi = {
             kod: {t: p for t, p in seri} for kod, seri in seriler.items()
         }
+        # OLCULEN SEY YAYIMLANAN SEY OLMALI. Ham 63 gunluk getiri /
+        # oynaklik siralamasi hala olculuyor (karsilastirma icin) ama
+        # BASLIK artik `olc_uretim`den geliyor: ekranda gosterilen
+        # getiri_puani ve risk_puani (Sakinlik) sinaniyor.
         ongoru_gucu = _ongoru.yorumla(
             _ongoru.olc(fiyat_haritasi, kat_haritasi, "getiri"),
             _ongoru.olc(fiyat_haritasi, kat_haritasi, "volatilite"),
             _ongoru.istikrar_olc(fiyat_haritasi, kat_haritasi),
+            uretim_getiri=_ongoru.olc_uretim(
+                fiyat_haritasi, kat_haritasi, "getiri",
+                ayarlar.get("agirliklar")),
+            uretim_risk=_ongoru.olc_uretim(
+                fiyat_haritasi, kat_haritasi, "risk"),
         )
         yaz("  ongoru gucu olculdu: " + ongoru_gucu["durum"])
     except Exception as hata:  # noqa: BLE001

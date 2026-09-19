@@ -130,9 +130,27 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
         const _Baslik('Puanlama ağırlıkları'),
         Text(
           'Puan, her ölçünün kategori ortalamasından sapmasının ağırlıklı '
-          'toplamıdır. Ağırlıkları değiştirdiğinizde sıralama anında '
+          'ortalamasıdır. Ağırlıkları değiştirdiğinizde sıralama anında '
           'yeniden hesaplanır — internete çıkılmaz.',
           style: tema.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 6),
+        // BU KAYDIRICI BİR SÜRE HİÇBİR ŞEY YAPMIYORDU.
+        //
+        // Puanlama iki eksene ayrıldıktan sonra oynaklık getiri
+        // kırılımında yer almayı bıraktı; ağırlığı eşleşecek bir bileşen
+        // bulamadığı için sessizce yok sayılıyordu. Artık yayımlanan
+        // Sakinlik puanına uygulanıyor — ve kullanıcı hangisinin neyi
+        // ölçtüğünü bilmeli, çünkü ikisinin ölçülen öngörü gücü çok
+        // farklı.
+        Text(
+          'İlk üç ağırlık GEÇMİŞ GETİRİ eksenini ayarlar; Düşük oynaklık '
+          'ise ayrı ölçülen Sakinlik eksenini. İkisi ana ekrandaki ölçüm '
+          'şeridinde her gün yeniden ölçülüyor: getiri ekseninin üç ay '
+          'sonrasını tutturma gücü bugüne kadar sıfıra yakın çıktı, '
+          'Sakinlik ekseninki kalıcı çıktı.',
+          style: tema.textTheme.bodySmall
+              ?.copyWith(color: tema.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 12),
         for (final metrik in varsayilanAgirliklar.keys)

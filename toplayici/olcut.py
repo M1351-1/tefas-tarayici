@@ -83,13 +83,43 @@ STOPAJ_STANDART = 0.175
 YERLI_HISSE_ALANI = "hs"
 YOGUNLUK_ESIGI = 51.0
 
+# MUAFIYET TEK GUNLUK FOTOGRAFLA KANITLANAMAZ.
+# =============================================
+#
+# Kod bir donem `hs >= 51` gorunce KOSULSUZ "stopaj yok" diyordu ve
+# net getiriyi kesin sayi gibi yaziyordu. Oysa elimizde yalnizca SON
+# GUNUN portfoy dagilimi var. Kuraldaki iki kosul bu veriden
+# dogrulanamaz:
+#
+#   1. SUREKLILIK — oranin donem boyunca korunmus olmasi gerekir. Tek
+#      gunluk kesit, fonun gecen ay da %51'in ustunde oldugunu
+#      soylemez.
+#   2. ELDE TUTMA SURESI — yatirimcinin kendi alis tarihine bagli. Kod
+#      kullanicinin ne zaman alacagini bilmiyor; fonun bir ozelligi
+#      degil, KISININ isleminin ozelligi.
+#
+# Ayrica "hisse senedi yogun fon" statusu ile bu istisna ayni sey
+# degil; BES/emeklilik fonlari bambaska bir rejime tabi.
+#
+# Ne yapiyoruz: hesabi degistirmiyoruz (esik dogru), ama SONUCU KESIN
+# DIYE SUNMUYORUZ. Gerekce metni kosullari sayiyor, kayit `kosullu`
+# isaretiyle cikiyor ve arayuz net getiriyi "koşullu" diye gosteriyor.
+# Esigi baska bir sayiya cekmek bu sorunu cozmezdi.
+STOPAJ_KOSULLARI = (
+    "bu oranın sürekli korunması ve katılma payının 1 yıldan uzun "
+    "elde tutulması"
+)
+
 
 def stopaj_orani(dagilim_kalemleri):
     """Fonun portfoyune bakarak stopaj oranini belirler.
 
     dagilim_kalemleri: [(alan_kodu, yuzde), ...] ya da None.
 
-    Doner: (oran, gerekce_metni, yerli_hisse_yuzdesi)
+    Doner: (oran, gerekce_metni, yerli_hisse_yuzdesi, kosullu_mu)
+
+    `kosullu_mu` True ise oran KANITLANMIS degil, VARSAYILMISTIR
+    (bkz. STOPAJ_KOSULLARI). Cagiran taraf bunu kullaniciya tasimali.
 
     Dagilim verisi yoksa STANDART oran uygulanir - muafiyeti
     kanitlayamadigimiz fonu vergisiz saymak, getirisini oldugundan
@@ -97,7 +127,8 @@ def stopaj_orani(dagilim_kalemleri):
     """
     if not dagilim_kalemleri:
         return (STOPAJ_STANDART,
-                "Portföy dağılımı bilinmiyor; stopajlı varsayıldı.", None)
+                "Portföy dağılımı bilinmiyor; stopajlı varsayıldı.",
+                None, False)
 
     yerli = 0.0
     for alan, yuzde in dagilim_kalemleri:
@@ -107,11 +138,14 @@ def stopaj_orani(dagilim_kalemleri):
 
     if yerli >= YOGUNLUK_ESIGI:
         return (STOPAJ_MUAF,
-                "Portföyünün %%%.0f'si yerli hisse senedi; hisse yoğun "
-                "fon sayıldığı için stopaj yok." % yerli, yerli)
+                "Son veri gününde portföyünün %%%.0f'si yerli hisse "
+                "senedi. Stopajın %%0 olması %s koşuluna bağlı; ikisi de "
+                "bu veriden doğrulanamıyor, hesap muafiyet geçerliymiş "
+                "gibi yapıldı." % (yerli, STOPAJ_KOSULLARI),
+                yerli, True)
     return (STOPAJ_STANDART,
             "Yerli hisse oranı %%%.0f, %%%.0f eşiğinin altında; stopaj "
-            "uygulanır." % (yerli, YOGUNLUK_ESIGI), yerli)
+            "uygulanır." % (yerli, YOGUNLUK_ESIGI), yerli, False)
 
 
 def net_getiri(vergi_oncesi, stopaj):

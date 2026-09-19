@@ -134,14 +134,120 @@ class YorumTesti(unittest.TestCase):
 
     def test_calisan_siralama_boyle_soylenir(self):
         g = {63: {"spearman": 0.45, "ust_dilim": 15.0, "alt_dilim": 5.0,
-                  "olcum_sayisi": 82}}
+                  "olcum_sayisi": 82, "baslangic_sayisi": 9,
+                  "ortusmeyen_baslangic": 3}}
         y = ongoru.yorumla(g, {})
         self.assertEqual(y["durum"], "calisiyor")
         self.assertIn("öngörü", y["ozet"])
 
+    def test_tek_baslangicla_calisiyor_denmez(self):
+        """GERILEME TESTI.
+
+        Kosul yalnizca korelasyon ve dilim farkiydi. Tek bir tahmin
+        baslangicindan cikan guclu bir iliski de "calisiyor" sayiliyordu;
+        oysa tek donemde gorulen iliski farkli piyasa rejimlerinde
+        surdugunu gostermez. Oynaklik metninde uygulanan kural burada
+        da gecerli olmali.
+        """
+        g = {63: {"spearman": 0.90, "ust_dilim": 30.0, "alt_dilim": 1.0,
+                  "olcum_sayisi": 12, "baslangic_sayisi": 1,
+                  "ortusmeyen_baslangic": 1}}
+        y = ongoru.yorumla(g, {})
+        self.assertEqual(y["durum"], "calismiyor")
+
+    def test_baslik_uretim_olcumunden_yazilir(self):
+        """OLCULEN = YAYIMLANAN.
+
+        Ham 63 gunluk getiri siralamasi ile ekrandaki bilesik
+        `getiri_puani` ayni sey degil. Uretim olcumu verildiyse metin
+        onu anlatmali ve hami parantez icinde ayrica soylemeli; yoksa
+        kullanici sinanmamis bir sayiya guvenir.
+        """
+        ham = {63: {"spearman": 0.01, "ust_dilim": 9.0, "alt_dilim": 9.5,
+                    "olcum_sayisi": 80, "ortusmeyen_baslangic": 3}}
+        ure = {63: {"spearman": 0.04, "ust_dilim": 9.2, "alt_dilim": 9.4,
+                    "olcum_sayisi": 80, "ortusmeyen_baslangic": 3}}
+        y = ongoru.yorumla(ham, {}, None, uretim_getiri=ure)
+        self.assertIn("uygulamada gösterilen getiri puanına", y["ozet"])
+        self.assertIn("0.01", y["ozet"])       # ham olcum de gorunur
+        self.assertEqual(y["uretim_getiri"], ure)
+        self.assertEqual(y["getiri"], ham)
+
+    def test_uretim_riski_sakinlik_diye_adlandirilir(self):
+        """Sinanan sey %60/%40 bilesimse metin "oynaklik" dememeli."""
+        g = {63: {"spearman": 0.01, "ust_dilim": 9.0, "alt_dilim": 9.5,
+                  "olcum_sayisi": 80, "ortusmeyen_baslangic": 3}}
+        r = {63: {"spearman": 0.68, "ust_dilim": 1.1, "alt_dilim": -1.0,
+                  "olcum_sayisi": 80, "ortusmeyen_baslangic": 3}}
+        y = ongoru.yorumla(g, {}, None, uretim_risk=r)
+        self.assertIn("SAKİNLİK puanı", y["ozet"])
+
     def test_olcum_yoksa_uydurma_yapilmaz(self):
         y = ongoru.yorumla({}, {})
         self.assertEqual(y["durum"], "olculemedi")
+
+
+class UretimYoluTesti(unittest.TestCase):
+    """Olcum, uygulamanin KULLANDIGI hesap yollarini cagirmali."""
+
+    def test_oynaklik_canli_hesapla_ayni_sonucu_verir(self):
+        """ASIL GERILEME TESTI.
+
+        Bu modulde oynakligin AYRI bir kopyasi vardi ve canli yoldaki
+        iki kural da eksikti: sifir fiyat -%100'luk bir gunluk getiri
+        olarak giriyor, buyuk tarih bosluklari tek gunluk degisim
+        sayiliyordu.
+
+        Olculdu: tek sifir fiyat iceren, kalan butun fiyatlari 100 olan
+        64 gozlemde canli hesap %0, buradaki kopya %199,97 donuyordu.
+        Ayni bozuk girdi iki yolda taban tabana zit yorumlaniyordu;
+        boyle bir sinama uygulamayi degil kendini olcer.
+        """
+        import metrikler
+        tarihler = ["2026-%02d-%02d" % (1 + i // 28, 1 + i % 28)
+                    for i in range(64)]
+        fiyatlar = {t: 100.0 for t in tarihler}
+        fiyatlar[tarihler[30]] = 0.0          # bozuk gozlem
+        seri = [(t, fiyatlar[t]) for t in tarihler]
+
+        ong = ongoru._volatilite(fiyatlar, tarihler, 0, 64)
+        g = metrikler.gunluk_getiriler(seri)
+        canli = metrikler.volatilite(seri, pencere=min(60, len(g)))
+        self.assertIsNotNone(ong)
+        self.assertAlmostEqual(ong, canli, places=9)
+        self.assertLess(ong, 1.0, "sifir fiyat hala oynaklik uretiyor")
+
+    def test_uretim_puani_puanlama_modulunun_kurallarina_uyar(self):
+        """Isaret, kirpma ve eksik bilesende yeniden normalize etme
+        `puanlama` ile ayni olmali — kopyalanmadi, cagrildi."""
+        metrik = {}
+        for i in range(20):
+            metrik["F%02d" % i] = {
+                "aylik_getiri": 1.0 + i, "uc_aylik_getiri": 3.0 + i,
+                "haftalik_getiri": 0.5 + i,
+                "volatilite": 5.0 + i, "maks_dusus": -5.0 - i,
+            }
+        risk = ongoru._uretim_puanlari(metrik, "risk")
+        # volatilite TERS: dusuk oynaklik yuksek sakinlik puani.
+        self.assertGreater(risk["F00"], risk["F19"])
+        # maks_dusus TERS DEGIL: sifira yakin olan sakindir.
+        yalniz_dusus = {k: {"maks_dusus": v["maks_dusus"]}
+                        for k, v in metrik.items()}
+        d = ongoru._uretim_puanlari(yalniz_dusus, "risk")
+        self.assertGreater(d["F00"], d["F19"])
+
+    def test_gecersiz_sayi_uretim_puanini_zehirlemez(self):
+        metrik = {}
+        for i in range(20):
+            metrik["F%02d" % i] = {
+                "aylik_getiri": 1.0 + i, "uc_aylik_getiri": 3.0 + i,
+                "haftalik_getiri": 0.5 + i,
+                "volatilite": 5.0 + i, "maks_dusus": -5.0 - i,
+            }
+        metrik["F00"]["aylik_getiri"] = float("nan")
+        puan = ongoru._uretim_puanlari(metrik, "getiri")
+        self.assertEqual(len(set(round(v, 6) for v in puan.values())),
+                         len(puan))
 
 
 if __name__ == "__main__":

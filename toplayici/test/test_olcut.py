@@ -215,10 +215,15 @@ def test_eksik_veride_none():
 
 def test_hisse_yogun_fon_stopajdan_muaf():
     """Kullanici: '+%50 hisse senedi iceriyorsa stopaj %0'."""
-    oran, gerekce, yerli = o.stopaj_orani([("hs", 91.0), ("tr", 9.0)])
+    oran, gerekce, yerli, kosullu = o.stopaj_orani([("hs", 91.0), ("tr", 9.0)])
     assert oran == 0.0
     assert yerli == 91.0
-    assert "stopaj yok" in gerekce
+    # MUAFIYET KESIN DIYE SUNULMAMALI. Elimizde yalnizca son gunun
+    # dagilimi var; sureklilik ve 1 yillik elde tutma kosullari bu
+    # veriden dogrulanamaz. Oran degismedi, IDDIA seviyesi degisti.
+    assert kosullu is True
+    assert "1 yıldan uzun" in gerekce
+    assert "sürekli" in gerekce
 
 
 def test_yabanci_hisse_fonu_muaf_degil():
@@ -228,26 +233,27 @@ def test_yabanci_hisse_fonu_muaf_degil():
     sayar ve getirisini %17,5 fazla gosterirdi. Muafiyet YERLI hisse
     yogunluguna bagli.
     """
-    oran, gerekce, yerli = o.stopaj_orani(
+    oran, gerekce, yerli, kosullu = o.stopaj_orani(
         [("yhs", 98.2), ("yyf", 1.77), ("tr", 0.02)])
     assert oran == o.STOPAJ_STANDART
     assert yerli == 0.0
+    assert kosullu is False
 
 
 def test_esik_altinda_stopaj_var():
-    oran, _, _ = o.stopaj_orani([("hs", 50.0), ("dt", 50.0)])
+    oran, _, _, _ = o.stopaj_orani([("hs", 50.0), ("dt", 50.0)])
     assert oran == o.STOPAJ_STANDART
 
 
 def test_esikte_muaf():
-    oran, _, _ = o.stopaj_orani([("hs", 51.0), ("dt", 49.0)])
+    oran, _, _, _ = o.stopaj_orani([("hs", 51.0), ("dt", 49.0)])
     assert oran == 0.0
 
 
 def test_dagilim_yoksa_stopajli_varsayilir():
     """Muafiyeti kanitlayamadigimiz fonu vergisiz saymak getirisini
     oldugundan yuksek gosterirdi."""
-    oran, gerekce, yerli = o.stopaj_orani(None)
+    oran, gerekce, yerli, _ = o.stopaj_orani(None)
     assert oran == o.STOPAJ_STANDART
     assert yerli is None
     assert "bilinmiyor" in gerekce.lower()
