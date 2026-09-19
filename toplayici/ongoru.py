@@ -47,8 +47,22 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-import metrikler as _metrikler
-import puanlama as _puanlama
+# ICE AKTARMA IKI YOLU DA DESTEKLEMELI.
+#
+# Proje icinde modullerin birbirini duz adla cagirmasi adet
+# (`uret.py` -> `import dagilim`), cunku `topla.py` kendi klasorunu
+# sys.path'e ekliyor. Ama testlerin bir kismi paket yoluyla ice
+# aktariyor (`from toplayici import ongoru`) ve o zaman duz ad
+# bulunamiyor. Once butun takim yalnizca SIRA SAYESINDE geciyordu:
+# baska bir test dosyasi yolu eklemis oluyordu. Tek dosya calistirilinca
+# ModuleNotFoundError aliniyordu — yani yesil takim bir seyi
+# gizliyordu.
+try:
+    import metrikler as _metrikler
+    import puanlama as _puanlama
+except ImportError:                       # paket olarak ice aktarildi
+    from . import metrikler as _metrikler
+    from . import puanlama as _puanlama
 
 # OLCULEN SEY, YAYIMLANAN SEY OLMALI.
 # ====================================
@@ -70,9 +84,22 @@ import puanlama as _puanlama
 # kurallari yalnizca canli yolda vardi.
 #
 # Artik her iki yol da `metrikler` + `puanlama` fonksiyonlarini
-# CAGIRIYOR. Ham olcum de birakildi (`ham_*` anahtarlari) ki ikisi
-# karsilastirilabilsin; ama yayimlanan basliktaki sayi uretimdeki
-# puanin sayisidir.
+# CAGIRIYOR. Ham olcum de birakildi ki ikisi karsilastirilabilsin; ama
+# yayimlanan basliktaki sayi uretimdeki puanin sayisidir.
+#
+# KAPATILMAYAN SINIR — KATEGORI EVRENI BUGUNDEN GELIYOR.
+# =======================================================
+#
+# Gecmis tarihlerdeki siralama, fonlarin BUGUNKU kategori etiketiyle
+# yapiliyor; o tarihte gecerli olan siniflandirma elimizde yok. Ayrica
+# veritabaninda yalnizca BUGUN yasayan fonlar var — kapanmis fonlar
+# seride hic gorunmuyor (survivorship). Ikisi de olcumu genellikle
+# IYIMSER yonde saptirir.
+#
+# Bu, bu veriyle duzeltilebilecek bir sey degil: gecmis kategori
+# atamalarinin ve kapanmis fonlarin ayri kaynaktan toplanmasi gerekir.
+# Duzeltilmedigi icin burada YAZIYOR; "zaman disi dogrulama yapildi"
+# diye sunulmamali.
 
 # Siralamanin dayandigi gecmis pencere (islem gunu). Puanlamadaki en
 # uzun getiri bileseni uc aylik oldugu icin 63 gun; 63 gunluk getiri
@@ -180,6 +207,36 @@ def _getiri(fiyatlar: dict, tarihler: list, i0: int, i1: int) -> float | None:
     if p0 is None or p1 is None or p0 <= 0:
         return None
     return (p1 / p0 - 1) * 100
+
+
+def _ortusmeyen(baslangiclar: list, ufuk: int) -> int:
+    """Ileri pencereleri ORTUSMEYEN en buyuk baslangic alt kumesi.
+
+    Once bir formulle tahmin ediliyordu:
+        ceil(baslangic_sayisi / ceil(ufuk / ADIM))
+    Bu, baslangiclarin duzgun araliklarla dizildigini VARSAYAR. Gercekte
+    bazi baslangiclarda hicbir kategori esik fon sayisini tutturamaz ve
+    o tarih atlanir; dizi seyrelir. Formul o zaman gercekte ortusmeyen
+    sayidan farkli bir sayi uretir — hangi yone saptigi da veriye bagli.
+
+    Artik KULLANILAN baslangic indislerinden aç gözlü (greedy) olarak
+    sayiliyor: ilkini al, sonra en az `ufuk` uzaktaki ilk baslangici al.
+    Bu, aralik secme probleminin bilinen en iyi cozumu ve ureten sey bir
+    tahmin degil, gercekten ortusmeyen pencere sayisi.
+
+    Bu sayi metinlerde "bu iliski farkli piyasa donemlerinde de suruyor
+    mu" sorusunun tek dayanagi; abartilmasi dogrudan yanlis cumle
+    uretir.
+    """
+    if not baslangiclar:
+        return 0
+    sayi = 1
+    son = baslangiclar[0]
+    for t in baslangiclar[1:]:
+        if t - son >= ufuk:
+            sayi += 1
+            son = t
+    return sayi
 
 
 def _seri(fiyatlar: dict, tarihler: list, i0: int, i1: int) -> list:
@@ -317,6 +374,7 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
         # olarak bildirilir (ADIM=21 iken 126 gunluk ufukta 1'e kadar
         # dusuyor).
         baslangic_sayisi = 0
+        kullanilan_ti = []
         for ti in range(GECMIS_PENCERE, len(tarihler) - ufuk, ADIM):
             gruplar = defaultdict(list)
             for fon, fiyatlar in seriler.items():
@@ -346,6 +404,7 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
                     alt_list.append(alt)
             if kullanildi:
                 baslangic_sayisi += 1
+                kullanilan_ti.append(ti)
 
         if not ro_list:
             continue
@@ -357,10 +416,8 @@ def olc(seriler: dict, kategoriler: dict, olcut: str = "getiri") -> dict:
             "olcum_sayisi": len(ro_list),
             # zamansal tekrar: kac ayri tahmin baslangici kullanildi
             "baslangic_sayisi": baslangic_sayisi,
-            # ileri pencereleri ortusmeyen en buyuk baslangic alt kumesi
-            "ortusmeyen_baslangic": max(
-                1, -(-baslangic_sayisi // max(1, -(-ufuk // ADIM)))
-            ) if baslangic_sayisi else 0,
+            # GERCEK tarihlerden sayilir, formulden degil (bkz. _ortusmeyen)
+            "ortusmeyen_baslangic": _ortusmeyen(kullanilan_ti, ufuk),
         }
     return sonuc
 
@@ -394,6 +451,7 @@ def olc_uretim(seriler: dict, kategoriler: dict, eksen: str = "getiri",
     for ufuk in UFUKLAR:
         ro_list, ust_list, alt_list = [], [], []
         baslangic_sayisi = 0
+        kullanilan_ti = []
         for ti in range(gecmis, len(tarihler) - ufuk, ADIM):
             # 1) Her fonun o andaki uretim metrikleri.
             gecmis_metrik, ileri_metrik, ileri_getiri = {}, {}, {}
@@ -452,6 +510,7 @@ def olc_uretim(seriler: dict, kategoriler: dict, eksen: str = "getiri",
                     alt_list.append(alt)
             if kullanildi:
                 baslangic_sayisi += 1
+                kullanilan_ti.append(ti)
 
         if not ro_list:
             continue
@@ -461,9 +520,7 @@ def olc_uretim(seriler: dict, kategoriler: dict, eksen: str = "getiri",
             "alt_dilim": round(sum(alt_list) / len(alt_list), 2),
             "olcum_sayisi": len(ro_list),
             "baslangic_sayisi": baslangic_sayisi,
-            "ortusmeyen_baslangic": max(
-                1, -(-baslangic_sayisi // max(1, -(-ufuk // ADIM)))
-            ) if baslangic_sayisi else 0,
+            "ortusmeyen_baslangic": _ortusmeyen(kullanilan_ti, ufuk),
             # Ileri sonucun BIRIMI. Getiri ekseninde yuzde, risk
             # ekseninde puan — dilim sayilarini okurken sart.
             "birim": "yuzde" if eksen != "risk" else "puan",
@@ -642,6 +699,7 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
         # bir donem bu alanlari HIC uretmiyordu ve yayimlanan JSON'da
         # None kaliyordu; ozet metni de 0 yaziyordu.
         baslangic_sayisi = 0
+        kullanilan_ti = []
         for ti in range(gecmis, len(tarihler) - ufuk, ADIM):
             kat_getiri = defaultdict(lambda: defaultdict(list))
             gecmisler = {}
@@ -695,6 +753,7 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
                     alt_list.append(alt)
             if kullanildi:
                 baslangic_sayisi += 1
+                kullanilan_ti.append(ti)
 
         if ro_list:
             sonuc[ufuk] = {
@@ -703,8 +762,7 @@ def istikrar_olc(seriler: dict, kategoriler: dict) -> dict:
                 "alt_dilim": round(sum(alt_list) / len(alt_list), 2),
                 "olcum_sayisi": len(ro_list),
                 "baslangic_sayisi": baslangic_sayisi,
-                "ortusmeyen_baslangic": max(
-                    1, -(-baslangic_sayisi // max(1, -(-ufuk // ADIM)))
-                ) if baslangic_sayisi else 0,
+                # GERCEK tarihlerden sayilir (bkz. _ortusmeyen).
+                "ortusmeyen_baslangic": _ortusmeyen(kullanilan_ti, ufuk),
             }
     return sonuc

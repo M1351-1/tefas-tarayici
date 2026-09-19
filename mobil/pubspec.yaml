@@ -4,7 +4,19 @@ description: >-
   uygulaması. Bir hesaplama ve karşılaştırma aracıdır, yatırım tavsiyesi
   değildir.
 publish_to: "none"
-version: 0.1.0
+# SURUM BURADA DURUR, DERLEME KOMUTUNDA DEGIL.
+#
+# Telefondaki APK versionCode=1, versionName=0.1.0 (aapt2 ile okundu).
+# Android daha dusuk bir versionCode'u ustune kurdurmaz; surumu
+# `--build-number` gibi bir bayrakla vermek ise belgelenmis komutla
+# (BENIOKU.md: `flutter build apk --release`) yeniden derleyen herkesin
+# yine 1 uretmesi demek olurdu. Konut projesinde tam olarak bu yasandi.
+#
+# Imza: release yapisi debug anahtar deposuyla imzalaniyor
+# (build.gradle.kts) ve o depo 28 Agustos'tan beri ayni. applicationId
+# de degismedi — yani APK mevcut uygulamanin USTUNE kurulur, kaldirmaya
+# ve veri kaybina gerek yok.
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

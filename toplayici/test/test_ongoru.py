@@ -203,7 +203,9 @@ class UretimYoluTesti(unittest.TestCase):
         Ayni bozuk girdi iki yolda taban tabana zit yorumlaniyordu;
         boyle bir sinama uygulamayi degil kendini olcer.
         """
-        import metrikler
+        # Modulun kendi ice aktardigi `metrikler` uzerinden: test
+        # dosyasi paket yoluyla ice aktarildiginda duz ad bulunamiyor.
+        metrikler = ongoru._metrikler
         tarihler = ["2026-%02d-%02d" % (1 + i // 28, 1 + i % 28)
                     for i in range(64)]
         fiyatlar = {t: 100.0 for t in tarihler}
