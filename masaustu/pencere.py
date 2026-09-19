@@ -20,9 +20,11 @@ Tablo tek bir "puan" yerine iki ayri sutun gosterir:
   GETIRI   — gecmisin tasviri. Olculdu: ileri Spearman ~0, ust %20
              dilimle alt %20 dilimin uc aylik getirisi ayni. Bu sutun
              gelecege dair bir iddia TASIMAZ.
-  SAKINLIK — akranlarina gore oynaklik + maksimum dusus. Olculdu:
-             Spearman 0,71 ve 0,57, yani KALICI. Gelecege dair gercek
-             bilgi tasiyan tek eksen budur.
+  SAKINLIK — akranlarina gore oynaklik (%60) + maksimum dusus (%40).
+             Olculdu: bu BILESIMIN siralamasi olcum doneminde suruyor
+             (ileri Spearman ~0,67). Getiriden kat kat dayanikli; ama
+             olcum ~14 aylik tek bir piyasa rejiminden ve 3 ortusmeyen
+             pencereden geliyor — "her zaman kalicidir" DEGIL.
 
 Bu bir yatirim tavsiyesi araci degildir.
 """
@@ -205,7 +207,7 @@ class AnaPencere(QMainWindow):
     # Her olcut icin ayri bir cumle: kullanici "Gecmis getiri"ye gore
     # siralarsa bunun bir tavsiye olmadigini AYNI ANDA gormeli.
     SIRALAMA_NOTU = {
-        "risk_puani": "Sakinlik — ölçülen tek kalıcı eksen. "
+        "risk_puani": "Sakinlik — ölçümde sürekliliği gösterilen tek eksen. "
                       "“En iyi fon” demek değil: hisse fonunda düşük "
                       "oynaklık, fonun işini yapmaması da olabilir.",
         "getiri_puani": "Geçmiş getiri — ölçüldü, geleceği TUTMUYOR. "
@@ -491,8 +493,10 @@ class AnaPencere(QMainWindow):
         eksen = tema.Kart(
             "İki ayrı eksen",
             "Getiri geçmişin tasviridir ve ölçülen öngörü gücü sıfıra "
-            "yakındır. Sakinlik ise kalıcıdır (oynaklık sıra korelasyonu "
-            "0,71) — geleceğe dair gerçek bilgi taşıyan tek eksen budur.")
+            "yakındır (sıra korelasyonu 0,02). Sakinlik sıralaması ise "
+            "ölçülen dönem boyunca sürdü (0,67) — kat kat dayanıklı, ama "
+            "tek dönemlik veriyle kalıcılık kanıtlanmış sayılmaz. Güncel "
+            "sayılar üstteki ölçüm şeridinde.")
         satir = QHBoxLayout()
         satir.setSpacing(24)
         gp, rp = f.get("getiri_puani"), f.get("risk_puani")

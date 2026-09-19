@@ -599,11 +599,23 @@ def yorumla(getiri_gucu: dict, vol_gucu: dict,
         # iddia etmek olurdu.
         ad = "SAKİNLİK puanı" if (uretim_risk or {}).get(63) else "OYNAKLIK"
         if oyn >= KALICI_ESIK and yeter:
+            # CUMLE KENDI ORNEKLEMININ SINIRINI TASIMALI.
+            #
+            # Once kosulsuz "kalici" deniyordu. Esik yalnizca 2
+            # ortusmeyen baslangic; gercek veride 3 cikiyor ve bu ~14
+            # aylik TEK bir piyasa rejiminden geliyor. Bu veriyle
+            # "gelecege dair gercek bir ifade" demek, elimizdeki
+            # kanittan fazlasini soylemek olur. Iliski gercek ve
+            # getiriden cok daha guclu — ama gosterilebilen sey "bu
+            # orneklemde suruyor", "her zaman surer" degil.
             ozet += (
-                " Buna karşılık %s kalıcı: sıra korelasyonu %.2f. "
-                "Yani \"bu fon sakin\" demek geleceğe dair gerçek bir "
-                "ifade, \"bu fon geçen ay iyi getirdi\" değil."
-                % (ad, oyn))
+                " Buna karşılık %s bu örneklemde SÜRÜYOR: sıra "
+                "korelasyonu %.2f, %d örtüşmeyen tahmin başlangıcında. "
+                "Yani \"bu fon sakin\" demek, \"bu fon geçen ay iyi "
+                "getirdi\" demekten çok daha dayanıklı çıktı — ama bu "
+                "kadar kısa ve tek dönemlik veriyle kalıcılık "
+                "KANITLANMIŞ sayılmaz."
+                % (ad, oyn, v.get("ortusmeyen_baslangic", 0)))
         elif oyn >= KALICI_ESIK:
             ozet += (
                 " %s için sıra korelasyonu %.2f gibi yüksek çıktı ama "

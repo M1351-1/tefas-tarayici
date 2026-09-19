@@ -128,8 +128,10 @@ class Fon {
 
   /// RISK EKSENI — akranlarina gore ne kadar sakin. Yuksek = sakin.
   ///
-  /// Olculdu: volatilite (Spearman 0,76) ve maksimum dusus (0,57) KALICI.
-  /// Yani bu eksen gelecege dair GERCEK bilgi tasir.
+  /// Olculdu: bu eksenin siralamasi olcum doneminde SURUYOR (ileri
+  /// Spearman ~0,67). Getiri ekseninden (0,02) kat kat dayanikli; ama
+  /// olcum ~14 aylik tek bir piyasa rejiminden ve 3 ortusmeyen
+  /// pencereden geliyor, yani "her zaman kalicidir" DEGIL.
   ///
   /// Bir YARGI degil PROFIL: hisse fonunda dusuk oynaklik, fonun isini
   /// yapmamasi da olabilir.

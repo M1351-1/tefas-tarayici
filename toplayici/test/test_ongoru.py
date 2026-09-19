@@ -181,6 +181,12 @@ class YorumTesti(unittest.TestCase):
                   "olcum_sayisi": 80, "ortusmeyen_baslangic": 3}}
         y = ongoru.yorumla(g, {}, None, uretim_risk=r)
         self.assertIn("SAKİNLİK puanı", y["ozet"])
+        # ORNEKLEM SINIRI CUMLENIN ICINDE OLMALI: 3 ortusmeyen pencere
+        # ~14 aylik tek bir rejimden geliyor; "kalicidir" demek
+        # elimizdeki kanittan fazlasini soylemek olurdu.
+        self.assertIn("bu örneklemde SÜRÜYOR", y["ozet"])
+        self.assertIn("KANITLANMIŞ sayılmaz", y["ozet"])
+        self.assertNotIn("geleceğe dair gerçek bir ifade", y["ozet"])
 
     def test_olcum_yoksa_uydurma_yapilmaz(self):
         y = ongoru.yorumla({}, {})
@@ -299,13 +305,20 @@ def test_metin_guclu_ama_tek_donemde_temkinli():
     assert "piyasa dönemlerinde" in ozet
 
 
-def test_metin_guclu_ve_cok_donemde_kalicilik_der():
-    """Ustteki testlerin tersi: kural "hic kalici demeyecegiz" degil.
+def test_metin_guclu_ve_cok_donemde_sureklilik_der():
+    """Ustteki testlerin tersi: kural "hic olumlu sey soylemeyecegiz" degil.
 
     Bu olmadan cumleyi tumden silmek de testleri gecirirdi.
+
+    Ama cumle KALICI demiyor, "bu orneklemde SURUYOR" diyor: 3
+    ortusmeyen pencere ~14 aylik TEK bir piyasa rejiminden geliyor ve
+    bu, gelecege dair kosulsuz bir ifadeyi tasiyamaz. Iliski gercek ve
+    getiriden cok daha guclu; gosterilebilen sey bu kadar.
     """
     ozet = ongoru.yorumla(_g(), _v(0.71, ortusmeyen=3), {})["ozet"]
-    assert "OYNAKLIK kalıcı" in ozet
+    assert "bu örneklemde SÜRÜYOR" in ozet
+    assert "3 örtüşmeyen" in ozet
+    assert "KANITLANMIŞ sayılmaz" in ozet
 
 
 def test_olcum_sayisi_ile_baslangic_sayisi_ayri_bildirilir():

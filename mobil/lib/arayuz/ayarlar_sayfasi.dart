@@ -148,7 +148,7 @@ class _AyarlarSayfasiDurumu extends State<AyarlarSayfasi> {
           'ise ayrı ölçülen Sakinlik eksenini. İkisi ana ekrandaki ölçüm '
           'şeridinde her gün yeniden ölçülüyor: getiri ekseninin üç ay '
           'sonrasını tutturma gücü bugüne kadar sıfıra yakın çıktı, '
-          'Sakinlik ekseninki kalıcı çıktı.',
+          'Sakinlik ekseninki ise ölçülen dönem boyunca sürdü.',
           style: tema.textTheme.bodySmall
               ?.copyWith(color: tema.colorScheme.onSurfaceVariant),
         ),
