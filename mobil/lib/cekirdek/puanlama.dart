@@ -61,12 +61,21 @@ double? puanHesapla(Fon fon, Map<String, double> agirliklar) {
 /// Ayrı ayrı gösterildikleri ekranlarda birleştirilmemeli: iki eksen iki
 /// ayrı bilgidir ve ölçülen öngörü güçleri çok farklıdır.
 ///
-/// Ölçüldü (2335 fon, 276 işlem günü, 11 Eylül 2026 verisi): ekranda
-/// gösterilen getiri puanına göre sıralamanın üç aylık ileri Spearman'ı
-/// 0,02 — bilgi yok denecek kadar az. Sakinlik puanınınki 0,67 —
-/// kalıcı. Bu yüzden risk ağırlığının gerçekten bir şey yapması
-/// gerekiyor; sessizce yok sayılamaz. Güncel sayılar her toplamada
-/// yeniden ölçülüp JSON'a yazılıyor, burada gömülü değil.
+/// Ölçüldü, üç ayrı örneklemde (üç aylık ileri Spearman):
+///
+///     örneklem                        getiri puanı   Sakinlik
+///     yerel DB   (30 Ağu, 2335 fon)      0,024         0,667
+///     yayımlanan (18 Eyl, 2320 fon)      0,148         0,668
+///     ayrı ölçüm (2488 fon)              0,095         0,726
+///
+/// Getiri ekseni örneklemden örnekleme 6 KAT oynuyor, Sakinlik %9
+/// içinde duruyor. Yani getiri ekseni yalnızca zayıf değil, KARARSIZ
+/// da — tek bir değeri "ölçülen sayı" diye yazmak bunu gizler.
+/// Sakinlik ise hem güçlü hem tekrarlanabilir çıkıyor; risk ağırlığının
+/// gerçekten bir şey yapması bu yüzden gerekiyor.
+///
+/// Güncel sayılar her toplamada yeniden ölçülüp JSON'a yazılıyor;
+/// burada gömülü DEĞİL, uygulamadaki ölçüm şeridinden okunur.
 double? birlesikPuan(Fon fon, Map<String, double> agirliklar) {
   final getiri = puanHesapla(fon, agirliklar);
   final risk = fon.riskPuani;

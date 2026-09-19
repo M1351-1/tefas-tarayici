@@ -21,10 +21,12 @@ Tablo tek bir "puan" yerine iki ayri sutun gosterir:
              dilimle alt %20 dilimin uc aylik getirisi ayni. Bu sutun
              gelecege dair bir iddia TASIMAZ.
   SAKINLIK — akranlarina gore oynaklik (%60) + maksimum dusus (%40).
-             Olculdu: bu BILESIMIN siralamasi olcum doneminde suruyor
-             (ileri Spearman ~0,67). Getiriden kat kat dayanikli; ama
-             olcum ~14 aylik tek bir piyasa rejiminden ve 3 ortusmeyen
-             pencereden geliyor — "her zaman kalicidir" DEGIL.
+             Olculdu: bu BILESIMIN siralamasi uc ayri orneklemde de
+             surdu (ileri Spearman 0,67-0,73). Getiri ekseni ayni
+             orneklemlerde 0,02-0,15 arasinda savruluyor — yani Sakinlik
+             hem guclu hem TEKRARLANABILIR. Yine de olcum ~14 aylik tek
+             bir piyasa rejiminden ve 3 ortusmeyen pencereden geliyor;
+             "her zaman kalicidir" DEGIL.
 
 Bu bir yatirim tavsiyesi araci degildir.
 """
@@ -492,11 +494,12 @@ class AnaPencere(QMainWindow):
         # IKI EKSEN YAN YANA — hangisinin ne anlama geldigi yazili.
         eksen = tema.Kart(
             "İki ayrı eksen",
-            "Getiri geçmişin tasviridir ve ölçülen öngörü gücü sıfıra "
-            "yakındır (sıra korelasyonu 0,02). Sakinlik sıralaması ise "
-            "ölçülen dönem boyunca sürdü (0,67) — kat kat dayanıklı, ama "
-            "tek dönemlik veriyle kalıcılık kanıtlanmış sayılmaz. Güncel "
-            "sayılar üstteki ölçüm şeridinde.")
+            "Getiri geçmişin tasviridir; ölçülen öngörü gücü sıfıra yakın "
+            "ve örneklemden örnekleme savruluyor (0,02-0,15). Sakinlik "
+            "sıralaması ölçülen dönem boyunca sürdü ve tekrarlandı "
+            "(0,67-0,73) — kat kat dayanıklı, ama tek dönemlik veriyle "
+            "kalıcılık kanıtlanmış sayılmaz. Güncel sayılar üstteki "
+            "ölçüm şeridinde.")
         satir = QHBoxLayout()
         satir.setSpacing(24)
         gp, rp = f.get("getiri_puani"), f.get("risk_puani")

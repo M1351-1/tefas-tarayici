@@ -410,8 +410,9 @@ class _PuanKirilimi extends StatelessWidget {
 /// Sakinlik puanının katkı dökümü.
 ///
 /// Getiri ekseninden AYRI bir kart: ikisi iki ayrı bilgi ve ölçülen
-/// öngörü güçleri çok farklı (getiri 0,02; sakinlik 0,67 — kendi
-/// verimizde, üç aylık ileri Spearman).
+/// öngörü güçleri çok farklı. Üç aylık ileri Spearman, üç ayrı
+/// örneklemde: getiri 0,02-0,15 arasında SAVRULUYOR, Sakinlik
+/// 0,67-0,73 arasında duruyor.
 ///
 /// Ağırlıklar kullanıcıya açık değil: risk ekseni yayımlanan sabit
 /// %60/%40 bileşimidir ve bu bileşim o haliyle ölçülmüştür.
