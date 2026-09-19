@@ -620,6 +620,49 @@ void olcuTestleri() {
     });
   });
 
+  group('Bozuk kırılım alanı', () {
+    /// Üretici tarafında "tek bozuk sayı her şeyi bozmasın" diye
+    /// uğraşılırken mobilde aynı sınıf açık duruyordu: beş alan da
+    /// koşulsuz `as num` yapılıyordu ve biri null olsa TypeError
+    /// BÜTÜN fon listesinin çözümlenmesini engelliyordu.
+    Map<String, dynamic> bozukKirilimli(dynamic bozukDeger) {
+      final j = fonJson();
+      final k = Map<String, dynamic>.from(
+          j['kirilim'] as Map<String, dynamic>);
+      final a = Map<String, dynamic>.from(
+          k['aylik_getiri'] as Map<String, dynamic>);
+      a['z'] = bozukDeger;
+      k['aylik_getiri'] = a;
+      j['kirilim'] = k;
+      return j;
+    }
+
+    test('null alan çökertmez, o bileşen atlanır', () {
+      final f = Fon.jsondan(bozukKirilimli(null));
+      expect(f.kod, 'AAA');
+      expect(f.kirilim.map((k) => k.metrik),
+          isNot(contains('aylik_getiri')));
+      expect(f.kirilim.length, 2, reason: 'diğer bileşenler yaşamalı');
+    });
+
+    test('sayı olmayan alan çökertmez', () {
+      final f = Fon.jsondan(bozukKirilimli('bilinmiyor'));
+      expect(f.kirilim.length, 2);
+    });
+
+    test('bozuk bileşen puana girmez, kalanlar normalize edilir', () {
+      // Uydurma sayı üretmek yerine bileşeni saymıyoruz; kalan
+      // ağırlığa bölündüğü için puan ölçeğini koruyor.
+      final f = Fon.jsondan(bozukKirilimli(double.nan));
+      final p = puanHesapla(f, const {
+        'uc_aylik_getiri': 0.25,
+        'haftalik_getiri': 0.20,
+      });
+      // (0,25*0,8 + 0,20*0,5) / 0,45
+      expect(p, closeTo((0.25 * 0.8 + 0.20 * 0.5) / 0.45, 1e-9));
+    });
+  });
+
   group('İstikrar', () {
     test('çözümlenir ve oran hesaplanır', () {
       final f = Fon.jsondan(zenginFon());

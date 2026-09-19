@@ -26,14 +26,50 @@ class Kirilim {
     required this.katki,
   });
 
-  factory Kirilim.jsondan(String metrik, Map<String, dynamic> j) => Kirilim(
-        metrik: metrik,
-        deger: (j['deger'] as num).toDouble(),
-        kategoriOrtalamasi: (j['kategori_ortalamasi'] as num).toDouble(),
-        z: (j['z'] as num).toDouble(),
-        agirlik: (j['agirlik'] as num).toDouble(),
-        katki: (j['katki'] as num).toDouble(),
-      );
+  /// TEK BOZUK ALAN BÜTÜN LİSTEYİ DÜŞÜRMESİN.
+  ///
+  /// Beş alan da koşulsuz `as num` yapılıyordu. Biri null ya da dizge
+  /// olsa TypeError atıyor, çağıran taraf yakalamıyor ve `Fon.jsondan`
+  /// düşüyordu — yani tek bir bozuk bileşen BÜTÜN fon listesinin
+  /// çözümlenmesini engelliyordu. Bu uygulamanın en ağır hata sınıfı:
+  /// ekranda hiçbir şey olmuyor.
+  ///
+  /// Bugünkü üretici bu alanları her zaman sonlu yazıyor (bir bileşen
+  /// ancak geçerli bir z üretildiyse kırılıma giriyor), yani açık
+  /// LATENT. Üretici tarafında "tek bozuk sayı her şeyi bozmasın" diye
+  /// uğraşırken burayı açık bırakmak tutarsız olurdu.
+  ///
+  /// Eksik/bozuk alanı olan bileşen null döner ve ÇAĞIRAN TARAF onu
+  /// atlar — uydurma sayı üretmek yerine o bileşeni göstermeyiz.
+  static Kirilim? cozumle(String metrik, Map<String, dynamic> j) {
+    double? sayi(String alan) {
+      final v = j[alan];
+      if (v is! num) return null;
+      final d = v.toDouble();
+      return d.isFinite ? d : null;
+    }
+
+    final deger = sayi('deger');
+    final ort = sayi('kategori_ortalamasi');
+    final z = sayi('z');
+    final agirlik = sayi('agirlik');
+    final katki = sayi('katki');
+    if (deger == null ||
+        ort == null ||
+        z == null ||
+        agirlik == null ||
+        katki == null) {
+      return null;
+    }
+    return Kirilim(
+      metrik: metrik,
+      deger: deger,
+      kategoriOrtalamasi: ort,
+      z: z,
+      agirlik: agirlik,
+      katki: katki,
+    );
+  }
 
   /// Ekranda gösterilecek okunur ad.
   String get baslik => switch (metrik) {
@@ -224,7 +260,10 @@ class Fon {
     final liste = <Kirilim>[];
     for (final e in ham.entries) {
       final h = _harita(e.value);
-      if (h != null) liste.add(Kirilim.jsondan(e.key, h));
+      if (h == null) continue;
+      final k = Kirilim.cozumle(e.key, h);
+      // Bozuk bileşen ATLANIR, liste yaşar (bkz. Kirilim.cozumle).
+      if (k != null) liste.add(k);
     }
     liste.sort((a, b) => b.agirlik.compareTo(a.agirlik));
     return liste;
